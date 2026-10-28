@@ -37,7 +37,7 @@ from lennoxs30api import (
     EC_BAD_PARAMETERS,
     LENNOX_BAD_STATUS,
     LENNOX_HUMID_OPERATION_DEHUMID,
-    LENNOX_HUMID_OPERATION_WAITING,
+    LENNOX_HUMID_OPERATION_OFF,
     LENNOX_HUMIDITY_MODE_DEHUMIDIFY,
     LENNOX_HUMIDITY_MODE_HUMIDIFY,
     LENNOX_HVAC_HEAT_COOL,
@@ -472,10 +472,10 @@ class S30Climate(S30BaseEntityMixin, ClimateEntity):
             err = f"set_hvac_mode unexpected exception, please log issue, [{self._myname}] exception [{ex}]"
             raise HomeAssistantError(err) from ex
 
-    def async_turn_off(self) -> None:
+    async def async_turn_off(self) -> None:
         """Turn off the zone."""
         _LOGGER.info("climate:async_turn_off name [%s]", self._myname)
-        return self.async_set_hvac_mode(HVACMode.OFF)
+        await self.async_set_hvac_mode(HVACMode.OFF)
 
     @property
     def hvac_action(self) -> HVACAction:
@@ -486,12 +486,11 @@ class S30Climate(S30BaseEntityMixin, ClimateEntity):
             return HVACAction.IDLE
         if to != LENNOX_TEMP_OPERATION_OFF:
             return to
-        if ho != LENNOX_TEMP_OPERATION_OFF:
+        if ho is not None and ho != LENNOX_HUMID_OPERATION_OFF:
             if ho == LENNOX_HUMID_OPERATION_DEHUMID:
                 return HVACAction.DRYING
-            if ho == LENNOX_HUMID_OPERATION_WAITING:
-                return HVACAction.IDLE
-            return ho
+            # HA has no action for humidifying or waiting, and an unknown value must not leak through.
+            return HVACAction.IDLE
         if to == LENNOX_TEMP_OPERATION_OFF and self._zone.systemMode != LENNOX_HVAC_OFF:
             return HVACAction.IDLE
         return to

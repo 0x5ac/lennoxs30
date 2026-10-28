@@ -14,7 +14,6 @@ from unittest.mock import patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util.unit_system import METRIC_SYSTEM, US_CUSTOMARY_SYSTEM
 from lennoxs30api.s30api_async import (
     lennox_system,
@@ -346,6 +345,25 @@ async def test_manager_s30_initialize(hass: HomeAssistant, manager_us_customary_
 
 
 @pytest.mark.asyncio()
+async def test_manager_s30_initialize_unique_id_update_runs_once(hass: HomeAssistant, manager_us_customary_units: Manager):
+    """After a v4 migration the registry rescan runs on the first connect only, not on every reconnect."""
+    manager = manager_us_customary_units
+    with patch.dict("custom_components.lennoxs30.g_unique_id_update", {4: True}, clear=True):
+        with patch.object(manager, "updateState"):
+            with patch.object(manager, "connect_subscribe"):
+                with patch.object(manager, "configuration_initialization"):
+                    with patch("asyncio.create_task") as create_task:
+                        create_task.return_value = "AWAITABLE_TASK"
+                        with patch.object(hass.config_entries, "async_forward_entry_setups"):
+                            with patch.object(manager, "create_devices"):
+                                with patch.object(manager, "unique_id_updates") as unique_id_updates:
+                                    await manager.s30_initialize()
+                                    assert unique_id_updates.call_count == 1
+                                    await manager.s30_initialize()
+                                    assert unique_id_updates.call_count == 1
+
+
+@pytest.mark.asyncio()
 async def test_manager_s30_initialize_retry_task(manager_us_customary_units: Manager):
     manager = manager_us_customary_units
     with patch.object(manager, "updateState") as update_state:
@@ -472,25 +490,37 @@ async def test_manager_reinitialize_task(manager_us_customary_units: Manager, ca
                             assert manager._ip_address in caplog.records[0].message
                             assert "Network Error" in caplog.records[0].message
 
+    # A login failure during reconnect runs inside a background task, so it must not raise.
+    # It should mark the connection as login-failed (making entities unavailable) and stop retrying.
     with caplog.at_level(logging.ERROR):
         caplog.clear()
         with patch.object(manager, "updateState") as update_state:
             with patch.object(manager, "connect_subscribe") as connect_subscribe:
                 connect_subscribe.side_effect = S30Exception("Bad Login", EC_LOGIN, 0)
                 with patch("asyncio.create_task") as create_task:
-                    ex: HomeAssistantError = None
-                    try:
+                    with patch("asyncio.sleep") as sleep:
                         await manager.reinitialize_task()
-                    except HomeAssistantError as hae:
-                        ex = hae
-                    assert ex is not None
-                    assert "unable to login" in str(ex)
-                    assert manager._ip_address in str(ex)
 
-                    assert connect_subscribe.call_count == 1
-                    assert len(connect_subscribe.mock_calls[0].args) == 0
-                    assert update_state.call_count == 1
-                    assert update_state.mock_calls[0].args[0] == DS_CONNECTING
+                        assert connect_subscribe.call_count == 1
+                        assert len(connect_subscribe.mock_calls[0].args) == 0
+                        assert update_state.call_count == 2
+                        assert update_state.mock_calls[0].args[0] == DS_CONNECTING
+                        assert update_state.mock_calls[1].args[0] == DS_LOGIN_FAILED
+                        assert sleep.call_count == 0
+                        assert create_task.call_count == 0
+
+                        assert len(caplog.records) == 2
+                        assert "Bad Login" in caplog.records[0].message
+                        assert "unable to login" in caplog.records[1].message
+                        assert manager._ip_address in caplog.records[1].message
+
+    # Without the updateState patch, the login failure must actually flip the connected flag.
+    manager.connected = True
+    with patch.object(manager, "connect_subscribe") as connect_subscribe:
+        connect_subscribe.side_effect = S30Exception("Bad Login", EC_LOGIN, 0)
+        await manager.reinitialize_task()
+        assert manager.connected is False
+        assert manager._hass.states.get(manager.connection_state).state == DS_LOGIN_FAILED
 
 
 @pytest.mark.asyncio()

@@ -69,6 +69,16 @@ async def test_ventilation_switch(hass, manager: Manager, caplog):
     assert attrs["alwaysOn"] is True
     assert attrs["timed"] is False
 
+    # Remaining time is unknown until the first status message arrives; must not raise.
+    system.ventilationRemainingTime = None
+    assert c.is_on is True
+    assert c.extra_state_attributes["timed"] is False
+    system.ventilationMode = "off"
+    assert c.is_on is False
+    assert c.extra_state_attributes["timed"] is False
+    system.ventilationRemainingTime = 0
+    system.ventilationMode = "on"
+
     system.ventilationMode = "off"
     assert c.is_on is False
     attrs = c.extra_state_attributes

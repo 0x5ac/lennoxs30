@@ -89,6 +89,20 @@ async def test_helpers_helper_get_equipment_device_info_no_device(manager: Manag
 
 
 @pytest.mark.asyncio()
+async def test_helpers_helper_get_equipment_device_info_controller_without_equipment(manager: Manager, caplog):
+    """Cloud connections send no equipment list; equipment 0 must still resolve to the controller silently."""
+    system = manager.api.system_list[0]
+    system.equipment = {}
+    system.ventilationUnitType = None
+    await manager.create_devices()
+    with caplog.at_level(logging.WARNING):
+        caplog.clear()
+        device_info = helper_get_equipment_device_info(manager, system, 0)
+        assert device_info["identifiers"] == {(LENNOX_DOMAIN, system.unique_id)}
+        assert len(caplog.records) == 0
+
+
+@pytest.mark.asyncio()
 async def test_helpers_create_equipment_entity_name(manager: Manager):
     """Test the helper to create device info"""
     await manager.create_devices()

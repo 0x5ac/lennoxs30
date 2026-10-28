@@ -89,17 +89,29 @@ STEP_LOCAL = vol.Schema(
 )
 
 
+def _is_ip_address(host: str) -> bool:
+    """Return True if host is an IPv4 or IPv6 literal."""
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
+
+
 def host_valid(hostport: str) -> bool:
     """Return True if hostname or IP address is valid."""
+    # A bare IPv4 or IPv6 literal.
+    if _is_ip_address(hostport):
+        return True
+    # A bracketed IPv6 literal with a port, e.g. [fe80::1]:8080
+    if hostport.startswith("[") and "]" in hostport:
+        return _is_ip_address(hostport[1 : hostport.index("]")])
     # We allow an host:port syntax.
-    splits = hostport.split(":")
-    host = splits[0]
-    try:
-        if ipaddress.ip_address(host).version == (4 or 6):
-            return True
-    except ValueError:
-        disallowed = re.compile(r"[^a-zA-Z\d\-]")
-        return all(x and not disallowed.search(x) for x in host.split("."))
+    host = hostport.split(":")[0]
+    if _is_ip_address(host):
+        return True
+    disallowed = re.compile(r"[^a-zA-Z\d\-]")
+    return all(x and not disallowed.search(x) for x in host.split("."))
 
 
 @callback

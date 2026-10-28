@@ -102,6 +102,8 @@ async def async_setup_entry(
                         number_list.append(number)
 
         for zone in system.zone_list:
+            if not zone.is_zone_active():
+                continue
             if zone.humidificationOption:
                 number = HumidifySetpointNumber(hass, manager, system, zone)
                 number_list.append(number)
@@ -398,8 +400,11 @@ class TimedVentilationNumber(S30BaseEntityMixin, NumberEntity):
         return 1
 
     @property
-    def native_value(self) -> float:
-        return int(self._system.ventilationRemainingTime / 60)
+    def native_value(self) -> float | None:
+        remaining = self._system.ventilationRemainingTime
+        if remaining is None:
+            return None
+        return int(remaining / 60)
 
     async def async_set_native_value(self, value: float) -> None:
         """Update the current value."""
@@ -577,7 +582,7 @@ class EquipmentParameterNumber(S30BaseEntityMixin, NumberEntity):
             value,
             enabled,
             self.equipment.equipment_id,
-            self.equipment.equipment_id,
+            self.parameter.pid,
         )
 
         if self.equipment.equipment_id != 0:

@@ -221,3 +221,24 @@ async def test_async_number_setup_entry(hass, manager: Manager, caplog):
         assert service_spec[0] == "set_zonetest_parameter"
         vol = service_spec[1]
         assert service_spec[2] == "async_set_zonetest_parameter"
+
+
+@pytest.mark.asyncio()
+async def test_async_number_setup_entry_skips_inactive_zones(hass, manager_system_04_furn_ac_zoning: Manager):
+    manager = manager_system_04_furn_ac_zoning
+    system: lennox_system = manager.api.system_list[0]
+    entry = manager.config_entry
+    hass.data["lennoxs30"] = {}
+    hass.data["lennoxs30"][entry.unique_id] = {MANAGER: manager}
+
+    # Zone 4 reports humidificationOption but has no temperature, so it is not active
+    inactive_zone = system.zone_list[3]
+    assert inactive_zone.is_zone_active() is False
+    assert inactive_zone.humidificationOption is True
+
+    async_add_entities = Mock()
+    await async_setup_entry(hass, entry, async_add_entities)
+    entity_list = async_add_entities.call_args[0][0]
+    setpoints = [e for e in entity_list if isinstance(e, (HumidifySetpointNumber, DehumidifySetpointNumber))]
+    assert {e._zone.id for e in setpoints} == {0, 1, 2}
+    assert len(setpoints) == 6

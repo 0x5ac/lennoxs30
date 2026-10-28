@@ -83,6 +83,10 @@ async def test_timed_ventilation_time_value(hass, manager: Manager):
     system.ventilationRemainingTime = 601
     assert c.value == 10
 
+    # Unknown until the first status message arrives; must not raise.
+    system.ventilationRemainingTime = None
+    assert c.native_value is None
+
 
 @pytest.mark.asyncio()
 async def test_timed_ventilation_time_set_value(hass, manager: Manager, caplog):

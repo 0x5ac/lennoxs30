@@ -6,6 +6,7 @@
 # pylint: disable=invalid-name
 
 import asyncio
+import functools
 import logging
 import re
 import time
@@ -255,13 +256,13 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
     old_version = config_entry.version
     new_version = _upgrade_config(new, old_version)
     if new_version > old_version:
-        config_entry.version = new_version
-        hass.config_entries.async_update_entry(config_entry, data=new)
+        # ConfigEntry attributes cannot be assigned directly; HA raises AttributeError.
+        hass.config_entries.async_update_entry(config_entry, data=new, version=new_version)
         _LOGGER.info(
             "Configuration for [%s] upgraded from version [%d] to version [%d]",
             config_entry.title,
             old_version,
-            config_entry.version,
+            new_version,
         )
     return True
 
@@ -339,31 +340,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         timeout,
     )
 
-    manager = Manager(
-        hass=hass,
-        config=entry,
-        email=email,
-        password=password,
-        poll_interval=poll_interval,
-        fast_poll_interval=fast_poll_interval,
-        fast_poll_count=fast_poll_count,
-        timeout=timeout,
-        allergen_defender_switch=allergen_defender_switch,
-        app_id=app_id,
-        conf_init_wait_time=conf_init_wait_time,
-        ip_address=host_name,
-        create_sensors=create_sensors,
-        create_inverter_power=create_inverter_power,
-        protocol=conf_protocol,
-        index=index,
-        pii_message_logs=conf_pii_in_message_logs,
-        message_debug_logging=conf_message_debug_logging,
-        message_logging_file=conf_message_debug_file,
-        create_diagnostic_sensors=create_diagnostic_sensors,
-        create_equipment_parameters=create_parameters,
+    # Constructing the API opens the message log file when one is configured. That is blocking
+    # file I/O, so build the manager in the executor rather than on the event loop (issue #412).
+    manager: Manager = await hass.async_add_executor_job(
+        functools.partial(
+            Manager,
+            hass=hass,
+            config=entry,
+            email=email,
+            password=password,
+            poll_interval=poll_interval,
+            fast_poll_interval=fast_poll_interval,
+            fast_poll_count=fast_poll_count,
+            timeout=timeout,
+            allergen_defender_switch=allergen_defender_switch,
+            app_id=app_id,
+            conf_init_wait_time=conf_init_wait_time,
+            ip_address=host_name,
+            create_sensors=create_sensors,
+            create_inverter_power=create_inverter_power,
+            protocol=conf_protocol,
+            index=index,
+            pii_message_logs=conf_pii_in_message_logs,
+            message_debug_logging=conf_message_debug_logging,
+            message_logging_file=conf_message_debug_file,
+            create_diagnostic_sensors=create_diagnostic_sensors,
+            create_equipment_parameters=create_parameters,
+        )
     )
     try:
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, manager.async_shutdown)
+        entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, manager.async_shutdown))
         hass.data[DOMAIN][entry.unique_id] = {MANAGER: manager}
         await manager.s30_initialize()
     except S30Exception as err:
@@ -375,11 +381,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         elif err.error_code == EC_CONFIG_TIMEOUT:
             _LOGGER.warning("async_setup: %s", err.message)
             _LOGGER.info("connection will be retried in 1 minute")
-            asyncio.create_task(manager.initialize_retry_task())
+            manager.create_background_task(manager.initialize_retry_task())
         else:
             _LOGGER.error("async_setup unexpected error %s", err.message)
             _LOGGER.info("connection will be retried in 1 minute")
-            asyncio.create_task(manager.initialize_retry_task())
+            manager.create_background_task(manager.initialize_retry_task())
     _LOGGER.debug("async_setup complete host [%s]", host_name)
     return True
 
@@ -387,7 +393,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     _LOGGER.debug("async_unload_entry entry [%s]", entry.unique_id)
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    manager: Manager = hass.data[DOMAIN][entry.unique_id][MANAGER]
+    # Platforms are only forwarded once the first connection succeeds. While the
+    # manager is still retrying there is nothing to unload, and HA raises if asked.
+    if manager.platforms_loaded:
+        unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    else:
+        unload_ok = True
     if unload_ok:
         entry_data = hass.data[DOMAIN].pop(entry.unique_id)
         manager: Manager = entry_data[MANAGER]
@@ -463,6 +475,10 @@ class Manager:
         )
         self._shutdown = False
         self._retrieve_task = None
+        # Retry and reconnect loops; held here so they are not garbage collected and can be cancelled on shutdown.
+        self._background_tasks: set[asyncio.Task] = set()
+        # The unique id rescan after a v4 migration only needs to run once per connection, not on every reconnect.
+        self._unique_ids_updated: bool = False
         self.allergen_defender_switch = allergen_defender_switch
         self.create_sensors: bool = create_sensors
         self.create_alert_sensors: bool = True
@@ -505,11 +521,28 @@ class Manager:
         """Called when hass shutsdown"""
         _LOGGER.debug("async_shutdown started host [%s]", self._ip_address)
         self._shutdown = True
+        tasks = list(self._background_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         if self._retrieve_task is not None:
             self.mp_wakeup_event.set()
             await self._retrieve_task
         await self.api.shutdown()
         _LOGGER.debug("async_shutdown complete [%s]", self._ip_address)
+
+    def create_background_task(self, coro) -> asyncio.Task:
+        """Start a retry or reconnect loop that async_shutdown will cancel."""
+        task = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
+
+    @property
+    def platforms_loaded(self) -> bool:
+        """Return True once the entity platforms have been forwarded."""
+        return self._climate_entities_initialized
 
     def updateState(self, state: int) -> None:
         """Updates the connection state"""
@@ -565,8 +598,9 @@ class Manager:
         self.updateState(DS_CONNECTING)
         await self.connect_subscribe()
         await self.configuration_initialization()
-        if len(g_unique_id_update) != 0:
+        if len(g_unique_id_update) != 0 and not self._unique_ids_updated:
             await self.unique_id_updates()
+            self._unique_ids_updated = True
         # Launch the message pump loop
         self._retrieve_task = asyncio.create_task(self.messagePump_task())
         # Since there is no change detection implemented to update device attributes like SW version - alwayas reinit
@@ -664,8 +698,9 @@ class Manager:
                 self.system_equip_device_map[system.sysId] = equip_device_map
             s30: S30ControllerDevice = S30ControllerDevice(self._hass, self.config_entry, system)
             s30.register_device()
-            if s30.equipment is not None:
-                equip_device_map[s30.equipment.equipment_id] = s30
+            # The controller is equipment 0. Cloud connections never send an equipment list, so map it
+            # unconditionally or every entity attached to it warns that equipment 0 is missing (issue #432).
+            equip_device_map[0] = s30
 
             if system.has_outdoor_unit:
                 s30_outdoor_unit = S30OutdoorUnit(self._hass, self.config_entry, system, s30)
@@ -824,9 +859,14 @@ class Manager:
             except S30Exception as e:
                 _LOGGER.error("reinitialize_task host [%s] %s", self._ip_address, e.as_string())
                 if e.error_code == EC_LOGIN:
-                    raise HomeAssistantError(
-                        f"Lennox30 unable to login host [{self._ip_address}]  - please check credentials and restart Home Assistant"
-                    ) from e
+                    # This runs as a background task, so an exception raised here is never observed.
+                    # Mark the connection failed so entities go unavailable, then stop retrying.
+                    self.updateState(DS_LOGIN_FAILED)
+                    _LOGGER.error(
+                        "reinitialize_task host [%s] unable to login - please check credentials and restart Home Assistant",
+                        self._ip_address,
+                    )
+                    return
             self.updateState(DS_RETRY_WAIT)
             await asyncio.sleep(RETRY_INTERVAL_SECONDS)
 
@@ -945,7 +985,7 @@ class Manager:
             return
         elif self.get_reinitialize():
             self.updateState(DS_DISCONNECTED)
-            asyncio.create_task(self.reinitialize_task())
+            self.create_background_task(self.reinitialize_task())
             _LOGGER.debug(
                 "messagePump_task host [%s] is exiting - to enter retries",
                 self._ip_address,

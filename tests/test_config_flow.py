@@ -28,6 +28,7 @@ from homeassistant.const import (
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 from lennoxs30api.s30exception import EC_COMMS_ERROR, EC_LOGIN, S30Exception
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.lennoxs30 import (
     DEFAULT_LOCAL_POLL_INTERVAL,
@@ -420,7 +421,6 @@ async def test_upgrade_config_v1(hass):
         "log_messages_to_file": False,
         "message_debug_file": "",
     }
-    config_entries.UPDATE_ENTRY_CONFIG_ENTRY_ATTRS = {}
     config_entry = config_entries.ConfigEntry(
         version=1,
         minor_version=0,
@@ -437,7 +437,7 @@ async def test_upgrade_config_v1(hass):
         await async_migrate_entry(hass, config_entry)
         assert update_entry.call_count == 1
         new_data = update_entry.call_args_list[0].kwargs["data"]
-        assert config_entry.version == 5
+        assert update_entry.call_args_list[0].kwargs["version"] == 5
         assert new_data["cloud_connection"] is False
         assert new_data["host"] == "192.168.1.93"
         assert new_data["app_id"] == "homeassistant"
@@ -491,7 +491,7 @@ async def test_upgrade_config_v1(hass):
         await async_migrate_entry(hass, config_entry)
         assert update_entry.call_count == 1
         new_data = update_entry.call_args_list[0].kwargs["data"]
-        assert config_entry.version == 5
+        assert update_entry.call_args_list[0].kwargs["version"] == 5
         assert new_data["cloud_connection"] is True
         assert new_data["email"] == "pete@pete.com"
         assert new_data["password"] == "secret"
@@ -532,7 +532,6 @@ async def test_upgrade_config_v2(hass):
         "fast_scan_count": 10,
         "timeout": 30,
     }
-    config_entries.UPDATE_ENTRY_CONFIG_ENTRY_ATTRS = {}
     config_entry = config_entries.ConfigEntry(
         version=1,
         minor_version=0,
@@ -549,7 +548,7 @@ async def test_upgrade_config_v2(hass):
         await async_migrate_entry(hass, config_entry)
         assert update_entry.call_count == 1
         new_data = update_entry.call_args_list[0].kwargs["data"]
-        assert config_entry.version == 5
+        assert update_entry.call_args_list[0].kwargs["version"] == 5
         assert new_data["cloud_connection"] is False
         assert new_data["host"] == "192.168.1.93"
         assert new_data["app_id"] == "homeassistant"
@@ -606,7 +605,7 @@ async def test_upgrade_config_v2(hass):
         await async_migrate_entry(hass, config_entry)
         assert update_entry.call_count == 1
         new_data = update_entry.call_args_list[0].kwargs["data"]
-        assert config_entry.version == 5
+        assert update_entry.call_args_list[0].kwargs["version"] == 5
         assert new_data["cloud_connection"] is True
         assert new_data["email"] == "pete@pete.com"
         assert new_data["password"] == "secret"
@@ -649,7 +648,6 @@ async def test_upgrade_config_v3(hass, caplog):
         "fast_scan_count": 10,
         "timeout": 30,
     }
-    config_entries.UPDATE_ENTRY_CONFIG_ENTRY_ATTRS = {}
     config_entry = config_entries.ConfigEntry(
         version=1,
         minor_version=0,
@@ -666,7 +664,7 @@ async def test_upgrade_config_v3(hass, caplog):
         await async_migrate_entry(hass, config_entry)
         assert update_entry.call_count == 1
         new_data = update_entry.call_args_list[0].kwargs["data"]
-        assert config_entry.version == 5
+        assert update_entry.call_args_list[0].kwargs["version"] == 5
         assert new_data["cloud_connection"] is False
         assert new_data["host"] == "192.168.1.93"
         assert new_data["app_id"] == "homeassistant"
@@ -723,7 +721,7 @@ async def test_upgrade_config_v3(hass, caplog):
         await async_migrate_entry(hass, config_entry)
         assert update_entry.call_count == 1
         new_data = update_entry.call_args_list[0].kwargs["data"]
-        assert config_entry.version == 5
+        assert update_entry.call_args_list[0].kwargs["version"] == 5
         assert new_data["cloud_connection"] is True
         assert new_data["email"] == "pete@pete.com"
         assert new_data["password"] == "secret"
@@ -753,6 +751,46 @@ def test_config_flow_host_valid(hass, caplog):
     assert host_valid("mydomain.google.com") is True
     assert host_valid("mydomain.google.com:444") is True
     assert host_valid("<>DDDD>") is False
+    # IPv6 literals, bare and bracketed with a port.
+    assert host_valid("fe80::1") is True
+    assert host_valid("2001:db8::10") is True
+    assert host_valid("[fe80::1]:8080") is True
+    assert host_valid("[not-an-address]:8080") is False
+    # Every path must return a real bool, not None.
+    assert host_valid("300.1.1.1") in (True, False)
+    assert host_valid("") is False
+
+
+@pytest.mark.asyncio()
+async def test_upgrade_config_updates_entry_version(hass):
+    """Migration must go through async_update_entry; HA forbids assigning ConfigEntry.version directly."""
+    data = {
+        "cloud_connection": False,
+        "host": "192.168.1.93",
+        "app_id": "homeassistant",
+        "create_sensors": True,
+        "allergen_defender_switch": False,
+        "create_inverter_power": False,
+        "protocol": "https",
+        "scan_interval": 1,
+        "fast_scan_interval": 0.75,
+        "init_wait_time": 30,
+        "pii_in_message_logs": False,
+        "message_debug_logging": True,
+        "log_messages_to_file": False,
+        "message_debug_file": "",
+    }
+    config_entry = MockConfigEntry(domain=DOMAIN, version=1, minor_version=0, title="Test", data=data, unique_id="12345")
+    config_entry.add_to_hass(hass)
+
+    assert await async_migrate_entry(hass, config_entry) is True
+
+    assert config_entry.version == 5
+    assert config_entry.data["fast_scan_count"] == 10
+    assert config_entry.data["timeout"] == DEFAULT_LOCAL_TIMEOUT
+    assert config_entry.data["create_diagnostic_sensors"] is False
+    assert config_entry.data["create_parameters"] is False
+    assert config_entry.data["host"] == "192.168.1.93"
 
 
 def test_lennoxS30ConfigFlow(manager: Manager, hass, caplog):

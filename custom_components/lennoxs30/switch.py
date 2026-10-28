@@ -112,8 +112,14 @@ class S30VentilationSwitch(S30BaseEntityMixin, SwitchEntity):
         attrs["ventilatingUntilTime"] = self._system.ventilatingUntilTime
         attrs["diagVentilationRuntime"] = self._system.diagVentilationRuntime
         attrs["alwaysOn"] = self._system.ventilationMode == "on"
-        attrs["timed"] = self._system.ventilationRemainingTime != 0
+        attrs["timed"] = self._remaining_time > 0
         return attrs
+
+    @property
+    def _remaining_time(self) -> int:
+        """Timed ventilation seconds remaining; None until the first status message arrives."""
+        remaining = self._system.ventilationRemainingTime
+        return 0 if remaining is None else remaining
 
     @property
     def name(self):
@@ -121,7 +127,7 @@ class S30VentilationSwitch(S30BaseEntityMixin, SwitchEntity):
 
     @property
     def is_on(self):
-        return self._system.ventilationMode == "on" or self._system.ventilationRemainingTime > 0
+        return self._system.ventilationMode == "on" or self._remaining_time > 0
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -161,7 +167,7 @@ class S30VentilationSwitch(S30BaseEntityMixin, SwitchEntity):
                 _LOGGER.debug("ventilation:async_turn_off calling ventilation_off")
                 await self._system.ventilation_off()
                 called = True
-            if self._system.ventilationRemainingTime > 0:
+            if self._remaining_time > 0:
                 await self._system.ventilation_timed(0)
                 _LOGGER.debug("ventilation:async_turn_off calling ventilation_timed(0)")
                 called = True
@@ -503,23 +509,35 @@ class S30ParameterSafetySwitch(S30BaseEntityMixin, SwitchEntity):
     def device_info(self) -> DeviceInfo:
         return {"identifiers": {(DOMAIN, self._system.unique_id)}}
 
-    async def async_turn_on(self, **kwargs):
-        _LOGGER.info(LOG_INFO_SWITCH_ASYNC_TURN_ON, self.__class__.__name__, self._myname)
-        self._manager.parameter_safety_turn_on(self._system.sysId)
+    def _cancel_rearm_task(self) -> None:
+        """Cancel a pending rearm timer, if any."""
         if self._rearm_task is not None:
             self._rearm_task.cancel()
             self._rearm_task = None
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Stop the rearm timer so it does not fire against a removed entity."""
+        self._cancel_rearm_task()
+        await super().async_will_remove_from_hass()
+
+    async def async_turn_on(self, **kwargs):
+        _LOGGER.info(LOG_INFO_SWITCH_ASYNC_TURN_ON, self.__class__.__name__, self._myname)
+        self._manager.parameter_safety_turn_on(self._system.sysId)
+        self._cancel_rearm_task()
         self.schedule_update_ha_state()
 
     async def async_turn_off(self, **kwargs):
         _LOGGER.info(LOG_INFO_SWITCH_ASYNC_TURN_OFF, self.__class__.__name__, self._myname)
         self._manager.parameter_safety_turn_off(self._system.sysId)
+        # Restart the timer rather than stacking a second one that would rearm early.
+        self._cancel_rearm_task()
         self._rearm_task = asyncio.create_task(self.async_rearm_task())
         self.schedule_update_ha_state()
 
     async def async_rearm_task(self):
         """Rearms the safety switch"""
         await asyncio.sleep(self._rearm_duration_sec)
+        self._rearm_task = None
         self._manager.parameter_safety_turn_on(self._system.sysId)
         self.schedule_update_ha_state()
 
