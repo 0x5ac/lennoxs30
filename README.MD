@@ -12,11 +12,12 @@ Add https://github.com/0x5ac/lennoxs30 to repositories, with type Integration.
  
 Go to the integrations page in home assistant. Settings-> Devices & Services -> Integrations.
 If you've got PeteRager's code, make sure you delete/disable anything you already have there.
-Add lennos S30 sac.  
+Add lennox S40,S30,E30,M30 sac.  
 
 ## Credits:
 Mostly done by Claude, he's pretty good.  Don't be a hater.
 
+## His stuff ⇩⇩⇩⇩⇩⇩
 
 # Lennox S40/S30/E30/M30 Component
 

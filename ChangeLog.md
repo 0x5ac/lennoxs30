@@ -13,6 +13,8 @@
   and entity registries in a way Home Assistant now deprecates.
 
 ### Changed
+- hacs: the HACS listing is named for the fork and requires Home
+  Assistant 2026.10 or newer, which the deprecation fixes rely on.
 - manifest, readme: the integration now identifies itself as the 0x5ac
   fork, lists @0x5ac as code owner, and links its documentation and
   issue tracker to the fork's sac branch.
