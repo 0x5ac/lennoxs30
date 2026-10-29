@@ -101,7 +101,8 @@ DEFAULT_POLL_INTERVAL: int = 10
 DEFAULT_LOCAL_POLL_INTERVAL: int = 1
 DEFAULT_FAST_POLL_INTERVAL: float = 0.75
 MAX_ERRORS = 2
-RETRY_INTERVAL_SECONDS = 60
+RETRY_INTERVAL_SECONDS = 1200
+RETRY_INTERVAL_MINUTES = RETRY_INTERVAL_SECONDS // 60
 
 UNTRACKED_STATE_ATTRIBUTES = {
     "unrecorded_attributes": {
@@ -380,11 +381,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ) from err
         elif err.error_code == EC_CONFIG_TIMEOUT:
             _LOGGER.warning("async_setup: %s", err.message)
-            _LOGGER.info("connection will be retried in 1 minute")
+            _LOGGER.info("connection will be retried in %d minutes", RETRY_INTERVAL_MINUTES)
             manager.create_background_task(manager.initialize_retry_task())
         else:
             _LOGGER.error("async_setup unexpected error %s", err.message)
-            _LOGGER.info("connection will be retried in 1 minute")
+            _LOGGER.info("connection will be retried in %d minutes", RETRY_INTERVAL_MINUTES)
             manager.create_background_task(manager.initialize_retry_task())
     _LOGGER.debug("async_setup complete host [%s]", host_name)
     return True
@@ -642,8 +643,8 @@ class Manager:
         _LOGGER.info("Updating entity unique ids for connection [%s]", self.api.ip)
         ent_reg = er.async_get(self._hass)
         entity_update_list: dict[str, str] = {}
-        for regentry in ent_reg.entities.values():
-            if regentry.config_entry_id == self.config_entry.entry_id and regentry.platform == LENNOX_DOMAIN:
+        for regentry in er.async_entries_for_config_entry(ent_reg, self.config_entry.entry_id):
+            if regentry.platform == LENNOX_DOMAIN:
                 if regentry.unique_id.startswith("123_"):
                     suffix = regentry.unique_id.removeprefix("123_")
                     new_unique_id = f"{system.unique_id}_{suffix}".replace("-", "")
@@ -661,30 +662,29 @@ class Manager:
     async def _update_device_unique_ids(self, system: lennox_system):
         dev_reg = dr.async_get(self._hass)
         device_update_list: dict[str, str] = {}
-        for regentry in dev_reg.devices.values():
-            if self.config_entry.entry_id in regentry.config_entries:
-                for x in regentry.identifiers:
-                    if x[0] == LENNOX_DOMAIN:
-                        unique_id = x[1]
-                        if unique_id.startswith("123_"):
-                            suffix = unique_id.removeprefix("123_")
-                            new_unique_id = f"{system.unique_id}_{suffix}"
-                            device_update_list[regentry.id] = new_unique_id
-                            _LOGGER.info(
-                                "Updating device [%s] identifier [%s] new unique id [%s]",
-                                regentry.id,
-                                unique_id,
-                                new_unique_id,
-                            )
-                        elif unique_id == "123":
-                            new_unique_id = system.unique_id
-                            device_update_list[regentry.id] = new_unique_id
-                            _LOGGER.info(
-                                "Updating device [%s] identifier [%s] new unique id [%s]",
-                                regentry.id,
-                                unique_id,
-                                new_unique_id,
-                            )
+        for regentry in dr.async_entries_for_config_entry(dev_reg, self.config_entry.entry_id):
+            for x in regentry.identifiers:
+                if x[0] == LENNOX_DOMAIN:
+                    unique_id = x[1]
+                    if unique_id.startswith("123_"):
+                        suffix = unique_id.removeprefix("123_")
+                        new_unique_id = f"{system.unique_id}_{suffix}"
+                        device_update_list[regentry.id] = new_unique_id
+                        _LOGGER.info(
+                            "Updating device [%s] identifier [%s] new unique id [%s]",
+                            regentry.id,
+                            unique_id,
+                            new_unique_id,
+                        )
+                    elif unique_id == "123":
+                        new_unique_id = system.unique_id
+                        device_update_list[regentry.id] = new_unique_id
+                        _LOGGER.info(
+                            "Updating device [%s] identifier [%s] new unique id [%s]",
+                            regentry.id,
+                            unique_id,
+                            new_unique_id,
+                        )
         for k, v in device_update_list.items():
             _LOGGER.info("Committing new device unique ids for connection [%s] [%s] [%s]", self.api.ip, k, v)
             dev_reg.async_update_device(k, new_identifiers={(LENNOX_DOMAIN, v)})
@@ -767,8 +767,9 @@ class Manager:
                 elif e.error_code == EC_CONFIG_TIMEOUT:
                     _LOGGER.warning("async_setup: host [%s] %s", self._ip_address, e.as_string())
                     _LOGGER.info(
-                        "connection host [%s] will be retried in 1 minute",
+                        "connection host [%s] will be retried in %d minutes",
                         self._ip_address,
+                        RETRY_INTERVAL_MINUTES,
                     )
                 else:
                     _LOGGER.error(
@@ -777,8 +778,9 @@ class Manager:
                         e.as_string(),
                     )
                     _LOGGER.info(
-                        "async setup host [%s] will be retried in 1 minute",
+                        "async setup host [%s] will be retried in %d minutes",
                         self._ip_address,
+                        RETRY_INTERVAL_MINUTES,
                     )
 
     async def configuration_initialization(self) -> None:

@@ -783,6 +783,8 @@ async def test_upgrade_config_updates_entry_version(hass):
     config_entry = MockConfigEntry(domain=DOMAIN, version=1, minor_version=0, title="Test", data=data, unique_id="12345")
     config_entry.add_to_hass(hass)
 
+    # This test only proves anything while HA's guard against direct attribute assignment is active.
+    assert "version" in config_entries.UPDATE_ENTRY_CONFIG_ENTRY_ATTRS
     assert await async_migrate_entry(hass, config_entry) is True
 
     assert config_entry.version == 5

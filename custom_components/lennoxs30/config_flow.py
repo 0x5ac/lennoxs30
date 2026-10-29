@@ -52,8 +52,6 @@ from .util import dict_redact_fields, redact_email
 DEFAULT_POLL_INTERVAL: int = 10
 DEFAULT_FAST_POLL_INTERVAL: float = 0.75
 DEFAULT_FAST_POLL_COUNT: int = 10
-MAX_ERRORS = 5
-RETRY_INTERVAL_SECONDS = 60
 DOMAIN = "lennoxs30"
 _LOGGER = logging.getLogger(__name__)
 

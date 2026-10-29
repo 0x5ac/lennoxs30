@@ -122,19 +122,8 @@ def loadfile(name: str, sysId: str = None) -> json:
 
 @pytest.fixture()
 def config_entry_local() -> config_entries.ConfigEntry:
-    config_entries.UPDATE_ENTRY_CONFIG_ENTRY_ATTRS = {}
-    config = config_entries.ConfigEntry(
-        version=1,
-        minor_version=0,
-        domain=DOMAIN,
-        title="10.0.0.1",
-        data={},
-        source="User",
-        unique_id="12345",
-        discovery_keys={},
-        options=None,
-        subentries_data=[],
-    )
+    # Build the data first: ConfigEntry attributes cannot be assigned after construction,
+    # and disabling that guard globally would hide the very bug the migration tests cover.
     data = {}
     data[CONF_CLOUD_CONNECTION] = False
     data[CONF_HOST] = "10.0.0.1"
@@ -156,44 +145,51 @@ def config_entry_local() -> config_entries.ConfigEntry:
     data[CONF_LOG_MESSAGES_TO_FILE] = False
     data[CONF_MESSAGE_DEBUG_FILE] = ""
 
-    config.data = data
-
-    return config
-
-
-@pytest.fixture()
-def config_entry_cloud() -> config_entries.ConfigEntry:
-    config_entries.UPDATE_ENTRY_CONFIG_ENTRY_ATTRS = {}
-    config = config_entries.ConfigEntry(
+    return config_entries.ConfigEntry(
         version=1,
         minor_version=0,
         domain=DOMAIN,
         title="10.0.0.1",
-        data={},
+        data=data,
         source="User",
         unique_id="12345",
         discovery_keys={},
         options=None,
         subentries_data=[],
     )
-    config.data = {}
-    config.data[CONF_CLOUD_CONNECTION] = True
-    config.data[CONF_EMAIL] = "pete.rage@rage.com"
-    config.data[CONF_PASSWORD] = "secret"
-    config.data[CONF_APP_ID] = "ha_prod"
-    config.data[CONF_CREATE_SENSORS] = True
-    config.data[CONF_ALLERGEN_DEFENDER_SWITCH] = True
-    config.data[CONF_SCAN_INTERVAL] = 10
-    config.data[CONF_INIT_WAIT_TIME] = 30
-    config.data[CONF_FAST_POLL_INTERVAL] = 1.0
-    config.data[CONF_FAST_POLL_COUNT] = 5
-    config.data[CONF_TIMEOUT] = 30
-    config.data[CONF_FAST_POLL_COUNT] = 5
-    config.data[CONF_PII_IN_MESSAGE_LOGS] = False
-    config.data[CONF_MESSAGE_DEBUG_LOGGING] = False
-    config.data[CONF_LOG_MESSAGES_TO_FILE] = False
-    config.data[CONF_MESSAGE_DEBUG_FILE] = ""
-    return config
+
+
+@pytest.fixture()
+def config_entry_cloud() -> config_entries.ConfigEntry:
+    data = {}
+    data[CONF_CLOUD_CONNECTION] = True
+    data[CONF_EMAIL] = "pete.rage@rage.com"
+    data[CONF_PASSWORD] = "secret"
+    data[CONF_APP_ID] = "ha_prod"
+    data[CONF_CREATE_SENSORS] = True
+    data[CONF_ALLERGEN_DEFENDER_SWITCH] = True
+    data[CONF_SCAN_INTERVAL] = 10
+    data[CONF_INIT_WAIT_TIME] = 30
+    data[CONF_FAST_POLL_INTERVAL] = 1.0
+    data[CONF_FAST_POLL_COUNT] = 5
+    data[CONF_TIMEOUT] = 30
+    data[CONF_FAST_POLL_COUNT] = 5
+    data[CONF_PII_IN_MESSAGE_LOGS] = False
+    data[CONF_MESSAGE_DEBUG_LOGGING] = False
+    data[CONF_LOG_MESSAGES_TO_FILE] = False
+    data[CONF_MESSAGE_DEBUG_FILE] = ""
+    return config_entries.ConfigEntry(
+        version=1,
+        minor_version=0,
+        domain=DOMAIN,
+        title="10.0.0.1",
+        data=data,
+        source="User",
+        unique_id="12345",
+        discovery_keys={},
+        options=None,
+        subentries_data=[],
+    )
 
 
 @pytest.fixture()

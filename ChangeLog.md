@@ -3,6 +3,26 @@
 All notable changes to this project will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
+## [2026-10-28]
+
+### Fixed
+- device: child devices were linked to the controller through the
+  deprecated via_device argument, which Home Assistant removes in
+  2027.8 and already warns about at every start (#436).
+- sensor: the BLE air quality sensors used two unit constants that
+  Home Assistant removes in 2027.8 and warns about at every start
+  (#428).
+- manager: the unique id migration for S40 systems walked the device
+  and entity registries in a way Home Assistant now deprecates.
+
+### Changed
+- manager: a failed or dropped connection is now retried every
+  20 minutes instead of every minute, and the log lines state the
+  real interval.
+- tests: the Home Assistant test harness now tracks 2026.10, matching
+  the deployed version, so its deprecation warnings show up in the
+  suite instead of only in the live log.
+
 ## [2026-10-27]
 
 ### Fixed
