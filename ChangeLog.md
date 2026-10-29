@@ -1,8 +1,5 @@
 # Changelog
 
-All notable changes to this project will be documented here.
-Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
-
 ## [2026-10-28]
 
 ### Fixed
@@ -16,6 +13,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   and entity registries in a way Home Assistant now deprecates.
 
 ### Changed
+- manifest, readme: the integration now identifies itself as the 0x5ac
+  fork, lists @0x5ac as code owner, and links its documentation and
+  issue tracker to the fork's sac branch.
 - manager: a failed or dropped connection is now retried every
   20 minutes instead of every minute, and the log lines state the
   real interval.

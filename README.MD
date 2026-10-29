@@ -1,3 +1,23 @@
+# THIS FORK.
+
+I've got a Lennox S40 system, which is a PITA.  This is done
+in the desperate hope that a little modfication of
+PeteRager's code will make it all better.
+
+The original: https://github.com/PeteRager/lennoxs30.git
+
+## To install:
+On the hacs page press the three dots on the top right hand side -> Custom Repositories.
+Add https://github.com/0x5ac/lennoxs30 to repositories, with type Integration.
+ 
+Go to the integrations page in home assistant. Settings-> Devices & Services -> Integrations.
+If you've got PeteRager's code, make sure you delete/disable anything you already have there.
+Add lennos S30 sac.  
+
+## Credits:
+Mostly done by Claude, he's pretty good.  Don't be a hater.
+
+
 # Lennox S40/S30/E30/M30 Component
 
 A custom component for Home Assistant to integrate with Lennox iComfort S40, S30, E30 or M30 thermostats; supporting local LAN connections and Lennox
