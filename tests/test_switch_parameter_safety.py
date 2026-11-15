@@ -80,3 +80,23 @@ async def test_parameter_safety_switch_turn_on_off(hass, manager: Manager, caplo
     with patch.object(c, "async_rearm_task"):
         await conf_test_switch_info_async_turn_off(c, "schedule_update_ha_state", c, caplog)
         await conf_test_switch_info_async_turn_on(c, "schedule_update_ha_state", c, caplog)
+
+
+@pytest.mark.asyncio()
+async def test_parameter_safety_switch_turn_off_restarts_timer(hass, manager: Manager):
+    """A second turn_off must restart the rearm timer, not leave the first one to fire early."""
+    system: lennox_system = manager.api.system_list[0]
+    c = S30ParameterSafetySwitch(hass, manager, system, 0.5)
+
+    with patch.object(c, "schedule_update_ha_state"):
+        await c.async_turn_off()
+        first_task = c._rearm_task
+        await asyncio.sleep(0.3)
+        await c.async_turn_off()
+        assert first_task.cancelled() or first_task.cancelling()
+        assert c._rearm_task is not first_task
+        # The first timer would have fired by now; the restarted one has not.
+        await asyncio.sleep(0.3)
+        assert c.is_on is False
+        await asyncio.sleep(0.4)
+        assert c.is_on is True

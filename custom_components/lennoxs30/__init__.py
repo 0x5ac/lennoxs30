@@ -259,13 +259,12 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
     old_version = config_entry.version
     new_version = _upgrade_config(new, old_version)
     if new_version > old_version:
-        config_entry.version = new_version
-        hass.config_entries.async_update_entry(config_entry, data=new)
+        hass.config_entries.async_update_entry(config_entry, data=new, version=new_version)
         _LOGGER.info(
             "Configuration for [%s] upgraded from version [%d] to version [%d]",
             config_entry.title,
             old_version,
-            config_entry.version,
+            new_version,
         )
     return True
 
@@ -383,11 +382,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         elif err.error_code == EC_CONFIG_TIMEOUT:
             _LOGGER.warning("async_setup: %s", err.message)
             _LOGGER.info("connection will be retried in 1 minute")
-            asyncio.create_task(manager.initialize_retry_task())
+            # Entry background tasks are cancelled when the entry is unloaded
+            entry.async_create_background_task(hass, manager.initialize_retry_task(), "lennoxs30 retry")
         else:
             _LOGGER.error("async_setup unexpected error %s", err.message)
             _LOGGER.info("connection will be retried in 1 minute")
-            asyncio.create_task(manager.initialize_retry_task())
+            entry.async_create_background_task(hass, manager.initialize_retry_task(), "lennoxs30 retry")
     _LOGGER.debug("async_setup complete host [%s]", host_name)
     return True
 
@@ -679,8 +679,9 @@ class Manager:
             s30: S30ControllerDevice = S30ControllerDevice(self._hass, self.config_entry, system)
             s30.register_device()
             self._system_controller_devices[system.sysId] = s30
-            if s30.equipment is not None:
-                equip_device_map[s30.equipment.equipment_id] = s30
+            # The controller is equipment 0. Map it even when no equipment list was received, as reported on
+            # cloud connections (issue #432), or every entity attached to it warns that equipment 0 is missing.
+            equip_device_map[0] = s30
 
             if system.has_outdoor_unit:
                 s30_outdoor_unit = S30OutdoorUnit(self._hass, self.config_entry, system, s30)
@@ -860,9 +861,13 @@ class Manager:
             except S30Exception as e:
                 _LOGGER.error("reinitialize_task host [%s] %s", self._ip_address, e.as_string())
                 if e.error_code == EC_LOGIN:
-                    raise HomeAssistantError(
-                        f"Lennox30 unable to login host [{self._ip_address}]  - please check credentials and restart Home Assistant"
-                    ) from e
+                    # Raising here is lost in a background task; mark the connection failed and stop
+                    self.updateState(DS_LOGIN_FAILED)
+                    _LOGGER.error(
+                        "reinitialize_task host [%s] unable to login - please check credentials and restart Home Assistant",
+                        self._ip_address,
+                    )
+                    return
             self.updateState(DS_RETRY_WAIT)
             await asyncio.sleep(RETRY_INTERVAL_SECONDS)
 
@@ -981,7 +986,7 @@ class Manager:
             return
         elif self.get_reinitialize():
             self.updateState(DS_DISCONNECTED)
-            asyncio.create_task(self.reinitialize_task())
+            self.config_entry.async_create_background_task(self._hass, self.reinitialize_task(), "lennoxs30 reconnect")
             _LOGGER.debug(
                 "messagePump_task host [%s] is exiting - to enter retries",
                 self._ip_address,

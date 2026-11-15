@@ -472,10 +472,10 @@ class S30Climate(S30BaseEntityMixin, ClimateEntity):
             err = f"set_hvac_mode unexpected exception, please log issue, [{self._myname}] exception [{ex}]"
             raise HomeAssistantError(err) from ex
 
-    def async_turn_off(self) -> None:
+    async def async_turn_off(self) -> None:
         """Turn off the zone."""
         _LOGGER.info("climate:async_turn_off name [%s]", self._myname)
-        return self.async_set_hvac_mode(HVACMode.OFF)
+        await self.async_set_hvac_mode(HVACMode.OFF)
 
     @property
     def hvac_action(self) -> HVACAction:

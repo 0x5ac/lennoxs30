@@ -506,16 +506,22 @@ class S30ParameterSafetySwitch(S30BaseEntityMixin, SwitchEntity):
     async def async_turn_on(self, **kwargs):
         _LOGGER.info(LOG_INFO_SWITCH_ASYNC_TURN_ON, self.__class__.__name__, self._myname)
         self._manager.parameter_safety_turn_on(self._system.sysId)
-        if self._rearm_task is not None:
-            self._rearm_task.cancel()
-            self._rearm_task = None
+        self._cancel_rearm_task()
         self.schedule_update_ha_state()
 
     async def async_turn_off(self, **kwargs):
         _LOGGER.info(LOG_INFO_SWITCH_ASYNC_TURN_OFF, self.__class__.__name__, self._myname)
         self._manager.parameter_safety_turn_off(self._system.sysId)
+        # Turning off again restarts the timer instead of leaving the first one to rearm early
+        self._cancel_rearm_task()
         self._rearm_task = asyncio.create_task(self.async_rearm_task())
         self.schedule_update_ha_state()
+
+    def _cancel_rearm_task(self) -> None:
+        """Cancel the pending rearm timer, if any."""
+        if self._rearm_task is not None:
+            self._rearm_task.cancel()
+            self._rearm_task = None
 
     async def async_rearm_task(self):
         """Rearms the safety switch"""
