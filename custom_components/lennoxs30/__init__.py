@@ -679,8 +679,9 @@ class Manager:
             s30: S30ControllerDevice = S30ControllerDevice(self._hass, self.config_entry, system)
             s30.register_device()
             self._system_controller_devices[system.sysId] = s30
-            if s30.equipment is not None:
-                equip_device_map[s30.equipment.equipment_id] = s30
+            # The controller is equipment 0. Map it even when no equipment list was received, as reported on
+            # cloud connections (issue #432), or every entity attached to it warns that equipment 0 is missing.
+            equip_device_map[0] = s30
 
             if system.has_outdoor_unit:
                 s30_outdoor_unit = S30OutdoorUnit(self._hass, self.config_entry, system, s30)
