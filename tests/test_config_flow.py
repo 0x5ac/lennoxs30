@@ -28,7 +28,7 @@ from homeassistant.const import (
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 from lennoxs30api.s30exception import EC_COMMS_ERROR, EC_LOGIN, S30Exception
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.lennoxs30 import (
     DEFAULT_LOCAL_POLL_INTERVAL,

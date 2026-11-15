@@ -22,7 +22,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.setup import async_setup_component
 from lennoxs30api.s30exception import EC_COMMS_ERROR, EC_CONFIG_TIMEOUT, EC_LOGIN, S30Exception
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.lennoxs30 import (
     DOMAIN,

@@ -1,5 +1,28 @@
 # Changelog
 
+## [2026-11-14]
+
+### Added
+- sensor: maintenance reminder sensors, one per reminder slot the
+  thermostat reports, also listed in diagnostics (upstream #438).
+- sensor: a per-zone demand sensor, disabled by default (upstream
+  #424).
+- ble: the 22V26 BLE repeater is supported, and BLE sensors that
+  appear after startup are added without restarting Home Assistant
+  (upstream #445, #446).
+
+### Fixed
+- config_flow: Home Assistant no longer warns about the deprecated
+  CONN_CLASS_LOCAL_POLL (upstream #449).
+
+### Changed
+- Merged upstream PeteRager/lennoxs30 master as of 2026-11-12
+  (f28feae).
+- manifest: requires lennoxs30api 0.2.26 and reports version
+  2026.11.0, as upstream does.
+- tests: the suite runs on pytest-homeassistant 2026.11.0, as
+  upstream's does.
+
 ## [2026-10-28]
 
 ### Fixed

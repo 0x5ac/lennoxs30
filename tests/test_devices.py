@@ -13,7 +13,7 @@ from unittest.mock import patch
 import pytest
 from homeassistant.helpers import device_registry as dr
 from lennoxs30api.s30api_async import LENNOX_NONE_STR, lennox_zone
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.lennoxs30 import (
     DOMAIN,
@@ -30,10 +30,6 @@ from custom_components.lennoxs30.device import (
     S30OutdoorUnit,
     S30VentilationUnit,
 )
-
-
-# The id the mocked registry hands back for the controller; children must link to it via via_device_id.
-CONTROLLER_DEVICE_ID = "controller-device-id"
 
 
 @pytest.mark.asyncio()
@@ -59,7 +55,6 @@ async def test_create_devices(hass, manager_2_systems: Manager):
     device_registry = dr.async_get(hass)
     system = manager.api.system_list[0]
     with patch.object(device_registry, "async_get_or_create") as mock_create_device:
-        mock_create_device.return_value.id = CONTROLLER_DEVICE_ID
         await manager.create_devices()
 
         assert len(manager.system_equip_device_map[manager.api.system_list[0].sysId]) == 3
@@ -81,7 +76,6 @@ async def test_create_devices(hass, manager_2_systems: Manager):
         device = manager.system_equip_device_map[system.sysId][0]
         assert isinstance(device, S30ControllerDevice)
         assert device.unique_name == system.unique_id
-        assert device.device_id == CONTROLLER_DEVICE_ID
 
         call = mock_create_device.mock_calls[1]
         identifiers = call.kwargs["identifiers"]
@@ -91,7 +85,7 @@ async def test_create_devices(hass, manager_2_systems: Manager):
         assert call.kwargs["model"] == "XP20-036-230B04"
         assert call.kwargs["hw_version"] == "5821D09999"
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
         for elem in identifiers:
             break
         assert elem[0] == DOMAIN
@@ -108,7 +102,7 @@ async def test_create_devices(hass, manager_2_systems: Manager):
         assert call.kwargs["model"] == "CBA38MV-036-230-02"
         assert call.kwargs["hw_version"] == "1621B25999"
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
         for elem in identifiers:
             break
         assert elem[0] == DOMAIN
@@ -124,7 +118,7 @@ async def test_create_devices(hass, manager_2_systems: Manager):
         assert call.kwargs["name"] == manager.api.system_list[0].name + "_" + zone.name
         assert call.kwargs["model"] == "thermostat"
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
 
         for elem in identifiers:
             break
@@ -137,7 +131,6 @@ async def test_create_devices_no_outdoor(hass, manager: Manager):
     device_registry = dr.async_get(hass)
     system = manager.api.system_list[0]
     with patch.object(device_registry, "async_get_or_create") as mock_create_device:
-        mock_create_device.return_value.id = CONTROLLER_DEVICE_ID
         system.outdoorUnitType = LENNOX_NONE_STR
         system.equipment.pop(1)
         await manager.create_devices()
@@ -168,7 +161,7 @@ async def test_create_devices_no_outdoor(hass, manager: Manager):
         assert call.kwargs["model"] == "CBA38MV-036-230-02"
         assert call.kwargs["hw_version"] == "1621B25999"
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
 
         for elem in identifiers:
             break
@@ -185,7 +178,7 @@ async def test_create_devices_no_outdoor(hass, manager: Manager):
         assert call.kwargs["name"] == manager.api.system_list[0].name + "_" + zone.name
         assert call.kwargs["model"] == "thermostat"
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
 
         for elem in identifiers:
             break
@@ -198,7 +191,6 @@ async def test_create_devices_no_indoor(hass, manager: Manager):
     device_registry = dr.async_get(hass)
     system = manager.api.system_list[0]
     with patch.object(device_registry, "async_get_or_create") as mock_create_device:
-        mock_create_device.return_value.id = CONTROLLER_DEVICE_ID
         manager.api.system_list[0].indoorUnitType = LENNOX_NONE_STR
         system.equipment.pop(2)
 
@@ -230,7 +222,7 @@ async def test_create_devices_no_indoor(hass, manager: Manager):
         assert call.kwargs["model"] == "XP20-036-230B04"
         assert call.kwargs["hw_version"] == "5821D09999"
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
         for elem in identifiers:
             break
         assert elem[0] == DOMAIN
@@ -246,7 +238,7 @@ async def test_create_devices_no_indoor(hass, manager: Manager):
         assert call.kwargs["name"] == manager.api.system_list[0].name + "_" + zone.name
         assert call.kwargs["model"] == "thermostat"
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
 
         for elem in identifiers:
             break
@@ -260,7 +252,6 @@ async def test_create_devices_furn_ac_zoning(hass, manager_system_04_furn_ac_zon
     device_registry = dr.async_get(hass)
     system = manager.api.system_list[0]
     with patch.object(device_registry, "async_get_or_create") as mock_create_device:
-        mock_create_device.return_value.id = CONTROLLER_DEVICE_ID
         await manager.create_devices()
         assert mock_create_device.call_count == 11
         assert len(manager.system_equip_device_map[system.sysId]) == 5
@@ -286,7 +277,7 @@ async def test_create_devices_furn_ac_zoning(hass, manager_system_04_furn_ac_zon
         assert call.kwargs["model"] == "EL18XCVS036-230A01"
         assert call.kwargs["hw_version"] == "5821E06000"
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
 
         for elem in identifiers:
             break
@@ -304,7 +295,7 @@ async def test_create_devices_furn_ac_zoning(hass, manager_system_04_furn_ac_zon
         assert call.kwargs["model"] == "SLP99UH110XV60C-01"
         assert call.kwargs["hw_version"] == "5920H11000"
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
 
         for elem in identifiers:
             break
@@ -322,7 +313,7 @@ async def test_create_devices_furn_ac_zoning(hass, manager_system_04_furn_ac_zon
         assert call.kwargs["model"] == "103916-03"
         assert call.kwargs["hw_version"] == "BT21B13000"
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
 
         for elem in identifiers:
             break
@@ -338,7 +329,7 @@ async def test_create_devices_furn_ac_zoning(hass, manager_system_04_furn_ac_zon
         assert call.kwargs["name"] == manager.api.system_list[0].name + " Ventilator"
         assert call.kwargs["model"] == "2_stage_hrv"
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
         device = manager.system_equip_device_map[system.sysId][VENTILATION_EQUIPMENT_ID]
         assert isinstance(device, S30VentilationUnit)
 
@@ -349,7 +340,7 @@ async def test_create_devices_furn_ac_zoning(hass, manager_system_04_furn_ac_zon
         assert call.kwargs["name"] == manager.api.system_list[0].name + "_" + zone.name
         assert call.kwargs["model"] == "thermostat"
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
 
         for elem in identifiers:
             break
@@ -363,7 +354,7 @@ async def test_create_devices_furn_ac_zoning(hass, manager_system_04_furn_ac_zon
         assert call.kwargs["name"] == manager.api.system_list[0].name + "_" + zone.name
         assert call.kwargs["model"] == "thermostat"
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
 
         for elem in identifiers:
             break
@@ -377,7 +368,7 @@ async def test_create_devices_furn_ac_zoning(hass, manager_system_04_furn_ac_zon
         assert call.kwargs["name"] == manager.api.system_list[0].name + "_" + zone.name
         assert call.kwargs["model"] == "thermostat"
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
 
         for elem in identifiers:
             break
@@ -395,7 +386,7 @@ async def test_create_devices_furn_ac_zoning(hass, manager_system_04_furn_ac_zon
             assert call.kwargs["model"] == ble_device.controlModelNumber
             assert call.kwargs["sw_version"] == ble_device.controlSoftwareVersion
             assert call.kwargs["hw_version"] == ble_device.controlHardwareVersion
-            assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+            assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
 
             for elem in identifiers:
                 break
@@ -414,7 +405,6 @@ async def test_create_device_no_equipment(hass, manager_system_04_furn_ac_zoning
     system.equipment = {}
     system.ventilationUnitType = None
     with patch.object(device_registry, "async_get_or_create") as mock_create_device:
-        mock_create_device.return_value.id = CONTROLLER_DEVICE_ID
         await manager.create_devices()
 
         # The controller is always mapped as equipment 0 even when no equipment list was received,
@@ -446,7 +436,7 @@ async def test_create_device_no_equipment(hass, manager_system_04_furn_ac_zoning
         assert call.kwargs["model"] == "air conditioner"
         assert call.kwargs["hw_version"] is None
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
         for elem in identifiers:
             break
         assert elem[0] == DOMAIN
@@ -460,7 +450,7 @@ async def test_create_device_no_equipment(hass, manager_system_04_furn_ac_zoning
         assert call.kwargs["model"] == "furnace"
         assert call.kwargs["hw_version"] is None
         assert "sw_version" not in call.kwargs
-        assert call.kwargs["via_device_id"] == CONTROLLER_DEVICE_ID
+        assert call.kwargs["via_device_id"] == mock_create_device.return_value.id
         for elem in identifiers:
             break
         assert elem[0] == DOMAIN
@@ -476,7 +466,6 @@ async def test_create_devices_zone_name_missing(hass, manager: Manager, caplog):
     zone.name = None
 
     with patch.object(device_registry, "async_get_or_create") as mock_create_device:
-        mock_create_device.return_value.id = CONTROLLER_DEVICE_ID
         with caplog.at_level(logging.WARNING):
             caplog.clear()
             await manager.create_devices()

@@ -40,7 +40,6 @@ class S30ControllerDevice(Device):
         self._hass = hass
         self._system = system
         self._config_entry = config_entry
-        # Registry id of this device, set by register_device; child devices link to it via via_device_id.
         self.device_id: str | None = None
 
     @property
@@ -52,7 +51,7 @@ class S30ControllerDevice(Device):
         """Register the device with HASS."""
         device_registry = dr.async_get(self._hass)
 
-        entry = device_registry.async_get_or_create(
+        device_entry = device_registry.async_get_or_create(
             config_entry_id=self._config_entry.entry_id,
             #            connections={(dr.CONNECTION_NETWORK_MAC, config.mac)},
             identifiers={(LENNOX_DOMAIN, self.unique_name)},
@@ -62,7 +61,7 @@ class S30ControllerDevice(Device):
             model=self._system.productType,
             sw_version=self._system.softwareVersion,
         )
-        self.device_id = entry.id
+        self.device_id = device_entry.id
 
 
 class S30OutdoorUnit(Device):
