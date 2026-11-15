@@ -259,13 +259,12 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
     old_version = config_entry.version
     new_version = _upgrade_config(new, old_version)
     if new_version > old_version:
-        config_entry.version = new_version
-        hass.config_entries.async_update_entry(config_entry, data=new)
+        hass.config_entries.async_update_entry(config_entry, data=new, version=new_version)
         _LOGGER.info(
             "Configuration for [%s] upgraded from version [%d] to version [%d]",
             config_entry.title,
             old_version,
-            config_entry.version,
+            new_version,
         )
     return True
 
