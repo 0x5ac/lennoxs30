@@ -102,6 +102,8 @@ async def async_setup_entry(
                         number_list.append(number)
 
         for zone in system.zone_list:
+            if not zone.is_zone_active():
+                continue
             if zone.humidificationOption:
                 number = HumidifySetpointNumber(hass, manager, system, zone)
                 number_list.append(number)
