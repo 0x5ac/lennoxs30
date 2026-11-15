@@ -744,26 +744,9 @@ async def test_upgrade_config_v3(hass, caplog):
         assert len(g_unique_id_update) != 0
 
 
-def test_config_flow_host_valid(hass, caplog):
-    assert host_valid("10.23.23.45") is True
-    assert host_valid("10.23.23.45:9191") is True
-    assert host_valid("localhost") is True
-    assert host_valid("mydomain.google.com") is True
-    assert host_valid("mydomain.google.com:444") is True
-    assert host_valid("<>DDDD>") is False
-    # IPv6 literals, bare and bracketed with a port.
-    assert host_valid("fe80::1") is True
-    assert host_valid("2001:db8::10") is True
-    assert host_valid("[fe80::1]:8080") is True
-    assert host_valid("[not-an-address]:8080") is False
-    # Every path must return a real bool, not None.
-    assert host_valid("300.1.1.1") in (True, False)
-    assert host_valid("") is False
-
-
 @pytest.mark.asyncio()
 async def test_upgrade_config_updates_entry_version(hass):
-    """Migration must go through async_update_entry; HA forbids assigning ConfigEntry.version directly."""
+    """HA forbids assigning ConfigEntry.version directly, so migration must go through async_update_entry."""
     data = {
         "cloud_connection": False,
         "host": "192.168.1.93",
@@ -780,19 +763,23 @@ async def test_upgrade_config_updates_entry_version(hass):
         "log_messages_to_file": False,
         "message_debug_file": "",
     }
-    config_entry = MockConfigEntry(domain=DOMAIN, version=1, minor_version=0, title="Test", data=data, unique_id="12345")
+    config_entry = MockConfigEntry(domain=DOMAIN, version=1, title="Test", data=data, unique_id="12345")
     config_entry.add_to_hass(hass)
 
-    # This test only proves anything while HA's guard against direct attribute assignment is active.
+    # Only meaningful while HA's guard against direct attribute assignment is active
     assert "version" in config_entries.UPDATE_ENTRY_CONFIG_ENTRY_ATTRS
     assert await async_migrate_entry(hass, config_entry) is True
-
     assert config_entry.version == 5
     assert config_entry.data["fast_scan_count"] == 10
-    assert config_entry.data["timeout"] == DEFAULT_LOCAL_TIMEOUT
-    assert config_entry.data["create_diagnostic_sensors"] is False
-    assert config_entry.data["create_parameters"] is False
-    assert config_entry.data["host"] == "192.168.1.93"
+
+
+def test_config_flow_host_valid(hass, caplog):
+    assert host_valid("10.23.23.45") is True
+    assert host_valid("10.23.23.45:9191") is True
+    assert host_valid("localhost") is True
+    assert host_valid("mydomain.google.com") is True
+    assert host_valid("mydomain.google.com:444") is True
+    assert host_valid("<>DDDD>") is False
 
 
 def test_lennoxS30ConfigFlow(manager: Manager, hass, caplog):

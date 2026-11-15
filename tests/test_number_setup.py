@@ -231,7 +231,7 @@ async def test_async_number_setup_entry_skips_inactive_zones(hass, manager_syste
     hass.data["lennoxs30"] = {}
     hass.data["lennoxs30"][entry.unique_id] = {MANAGER: manager}
 
-    # Zone 4 reports humidificationOption but has no temperature, so it is not active
+    # Zone 4 reports humidificationOption but is not active, like other platforms it gets no entities
     inactive_zone = system.zone_list[3]
     assert inactive_zone.is_zone_active() is False
     assert inactive_zone.humidificationOption is True

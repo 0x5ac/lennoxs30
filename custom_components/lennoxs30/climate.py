@@ -37,7 +37,7 @@ from lennoxs30api import (
     EC_BAD_PARAMETERS,
     LENNOX_BAD_STATUS,
     LENNOX_HUMID_OPERATION_DEHUMID,
-    LENNOX_HUMID_OPERATION_OFF,
+    LENNOX_HUMID_OPERATION_WAITING,
     LENNOX_HUMIDITY_MODE_DEHUMIDIFY,
     LENNOX_HUMIDITY_MODE_HUMIDIFY,
     LENNOX_HVAC_HEAT_COOL,
@@ -486,11 +486,12 @@ class S30Climate(S30BaseEntityMixin, ClimateEntity):
             return HVACAction.IDLE
         if to != LENNOX_TEMP_OPERATION_OFF:
             return to
-        if ho is not None and ho != LENNOX_HUMID_OPERATION_OFF:
+        if ho != LENNOX_TEMP_OPERATION_OFF:
             if ho == LENNOX_HUMID_OPERATION_DEHUMID:
                 return HVACAction.DRYING
-            # HA has no action for humidifying or waiting, and an unknown value must not leak through.
-            return HVACAction.IDLE
+            if ho == LENNOX_HUMID_OPERATION_WAITING:
+                return HVACAction.IDLE
+            return ho
         if to == LENNOX_TEMP_OPERATION_OFF and self._zone.systemMode != LENNOX_HVAC_OFF:
             return HVACAction.IDLE
         return to

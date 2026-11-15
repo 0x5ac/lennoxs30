@@ -77,6 +77,11 @@ def conftest_close_coroutine(coro, *args, **kwargs):
     return DEFAULT
 
 
+def conftest_close_background_task(hass, coro, *args, **kwargs):
+    """Side effect for a patched ConfigEntry.async_create_background_task that closes the coroutine."""
+    return conftest_close_coroutine(coro)
+
+
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations):
     return
@@ -128,8 +133,7 @@ def loadfile(name: str, sysId: str = None) -> json:
 
 @pytest.fixture()
 def config_entry_local() -> config_entries.ConfigEntry:
-    # Build the data first: ConfigEntry attributes cannot be assigned after construction,
-    # and disabling that guard globally would hide the very bug the migration tests cover.
+    # Pass data to the constructor; disabling HA's attribute guard would hide migration bugs
     data = {}
     data[CONF_CLOUD_CONNECTION] = False
     data[CONF_HOST] = "10.0.0.1"

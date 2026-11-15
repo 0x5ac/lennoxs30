@@ -22,7 +22,6 @@ from homeassistant.exceptions import HomeAssistantError
 from lennoxs30api.s30api_async import (
     LENNOX_BAD_STATUS,
     LENNOX_HUMID_OPERATION_DEHUMID,
-    LENNOX_HUMID_OPERATION_HUMID,
     LENNOX_HUMID_OPERATION_OFF,
     LENNOX_HUMID_OPERATION_WAITING,
     LENNOX_HUMIDITY_MODE_DEHUMIDIFY,
@@ -1134,22 +1133,9 @@ async def test_climate_hvac_action(hass, manager_mz: Manager):
     zone.humOperation = LENNOX_HUMID_OPERATION_WAITING
     assert c.hvac_action == HVACAction.IDLE
 
-    # Humidifying has no HVACAction equivalent and unknown values must not leak into the attribute.
-    zone.tempOperation = LENNOX_TEMP_OPERATION_OFF
-    zone.humOperation = LENNOX_HUMID_OPERATION_HUMID
-    assert c.hvac_action == HVACAction.IDLE
-
     zone.tempOperation = LENNOX_TEMP_OPERATION_OFF
     zone.humOperation = "unexpected_humdity_operation"
-    assert c.hvac_action == HVACAction.IDLE
-
-    # Before the first status message the humidity operation is unknown; the system being off wins.
-    zone.systemMode = LENNOX_HVAC_OFF
-    zone.tempOperation = LENNOX_TEMP_OPERATION_OFF
-    zone.humOperation = None
-    assert c.hvac_action == "off"
-    zone.systemMode = LENNOX_HVAC_COOL
-    assert c.hvac_action == HVACAction.IDLE
+    assert c.hvac_action == "unexpected_humdity_operation"
 
     system.zoningMode = LENNOX_ZONING_MODE_CENTRAL
     zone.tempOperation = LENNOX_TEMP_OPERATION_COOLING
@@ -1514,6 +1500,6 @@ async def test_climate_turn_off(hass, manager_mz: Manager, caplog):
         assert setHVACMode.call_count == 1
         assert setHVACMode.await_args[0][0] == LENNOX_HVAC_OFF
 
-    # The climate.turn_off service picks the job type from the method itself. A
-    # plain def runs in the executor and HA logs that it returned a coroutine.
+    # The climate.turn_off service picks the job type from the method itself. A plain
+    # def runs in the executor, and HA logs an error because it returned a coroutine.
     assert c.get_hassjob_type("async_turn_off") is HassJobType.Coroutinefunction

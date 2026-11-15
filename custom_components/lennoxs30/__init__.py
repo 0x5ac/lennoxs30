@@ -104,8 +104,7 @@ DEFAULT_POLL_INTERVAL: int = 10
 DEFAULT_LOCAL_POLL_INTERVAL: int = 1
 DEFAULT_FAST_POLL_INTERVAL: float = 0.75
 MAX_ERRORS = 2
-RETRY_INTERVAL_SECONDS = 1200
-RETRY_INTERVAL_MINUTES = RETRY_INTERVAL_SECONDS // 60
+RETRY_INTERVAL_SECONDS = 60
 
 UNTRACKED_STATE_ATTRIBUTES = {
     "unrecorded_attributes": {
@@ -260,7 +259,6 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
     old_version = config_entry.version
     new_version = _upgrade_config(new, old_version)
     if new_version > old_version:
-        # ConfigEntry attributes cannot be assigned directly; HA raises AttributeError.
         hass.config_entries.async_update_entry(config_entry, data=new, version=new_version)
         _LOGGER.info(
             "Configuration for [%s] upgraded from version [%d] to version [%d]",
@@ -372,7 +370,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
     )
     try:
-        entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, manager.async_shutdown))
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, manager.async_shutdown)
         hass.data[DOMAIN][entry.unique_id] = {MANAGER: manager}
         await manager.s30_initialize()
     except S30Exception as err:
@@ -383,12 +381,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ) from err
         elif err.error_code == EC_CONFIG_TIMEOUT:
             _LOGGER.warning("async_setup: %s", err.message)
-            _LOGGER.info("connection will be retried in %d minutes", RETRY_INTERVAL_MINUTES)
-            manager.create_background_task(manager.initialize_retry_task())
+            _LOGGER.info("connection will be retried in 1 minute")
+            # Entry background tasks are cancelled when the entry is unloaded
+            entry.async_create_background_task(hass, manager.initialize_retry_task(), "lennoxs30 retry")
         else:
             _LOGGER.error("async_setup unexpected error %s", err.message)
-            _LOGGER.info("connection will be retried in %d minutes", RETRY_INTERVAL_MINUTES)
-            manager.create_background_task(manager.initialize_retry_task())
+            _LOGGER.info("connection will be retried in 1 minute")
+            entry.async_create_background_task(hass, manager.initialize_retry_task(), "lennoxs30 retry")
     _LOGGER.debug("async_setup complete host [%s]", host_name)
     return True
 
@@ -396,13 +395,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     _LOGGER.debug("async_unload_entry entry [%s]", entry.unique_id)
-    manager: Manager = hass.data[DOMAIN][entry.unique_id][MANAGER]
-    # Platforms are only forwarded once the first connection succeeds. While the
-    # manager is still retrying there is nothing to unload, and HA raises if asked.
-    if manager.platforms_loaded:
-        unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    else:
-        unload_ok = True
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         entry_data = hass.data[DOMAIN].pop(entry.unique_id)
         manager: Manager = entry_data[MANAGER]
@@ -478,10 +471,6 @@ class Manager:
         )
         self._shutdown = False
         self._retrieve_task = None
-        # Retry and reconnect loops; held here so they are not garbage collected and can be cancelled on shutdown.
-        self._background_tasks: set[asyncio.Task] = set()
-        # The unique id rescan after a v4 migration only needs to run once per connection, not on every reconnect.
-        self._unique_ids_updated: bool = False
         self.allergen_defender_switch = allergen_defender_switch
         self.create_sensors: bool = create_sensors
         self.create_alert_sensors: bool = True
@@ -526,28 +515,11 @@ class Manager:
         """Called when hass shutsdown"""
         _LOGGER.debug("async_shutdown started host [%s]", self._ip_address)
         self._shutdown = True
-        tasks = list(self._background_tasks)
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
         if self._retrieve_task is not None:
             self.mp_wakeup_event.set()
             await self._retrieve_task
         await self.api.shutdown()
         _LOGGER.debug("async_shutdown complete [%s]", self._ip_address)
-
-    def create_background_task(self, coro) -> asyncio.Task:
-        """Start a retry or reconnect loop that async_shutdown will cancel."""
-        task = asyncio.create_task(coro)
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
-        return task
-
-    @property
-    def platforms_loaded(self) -> bool:
-        """Return True once the entity platforms have been forwarded."""
-        return self._climate_entities_initialized
 
     def updateState(self, state: int) -> None:
         """Updates the connection state"""
@@ -603,9 +575,8 @@ class Manager:
         self.updateState(DS_CONNECTING)
         await self.connect_subscribe()
         await self.configuration_initialization()
-        if len(g_unique_id_update) != 0 and not self._unique_ids_updated:
+        if len(g_unique_id_update) != 0:
             await self.unique_id_updates()
-            self._unique_ids_updated = True
         # Launch the message pump loop
         self._retrieve_task = asyncio.create_task(self.messagePump_task())
         # Since there is no change detection implemented to update device attributes like SW version - alwayas reinit
@@ -651,8 +622,8 @@ class Manager:
         _LOGGER.info("Updating entity unique ids for connection [%s]", self.api.ip)
         ent_reg = er.async_get(self._hass)
         entity_update_list: dict[str, str] = {}
-        for regentry in er.async_entries_for_config_entry(ent_reg, self.config_entry.entry_id):
-            if regentry.platform == LENNOX_DOMAIN:
+        for regentry in ent_reg.entities.values():
+            if regentry.config_entry_id == self.config_entry.entry_id and regentry.platform == LENNOX_DOMAIN:
                 if regentry.unique_id.startswith("123_"):
                     suffix = regentry.unique_id.removeprefix("123_")
                     new_unique_id = f"{system.unique_id}_{suffix}".replace("-", "")
@@ -670,29 +641,30 @@ class Manager:
     async def _update_device_unique_ids(self, system: lennox_system):
         dev_reg = dr.async_get(self._hass)
         device_update_list: dict[str, str] = {}
-        for regentry in dr.async_entries_for_config_entry(dev_reg, self.config_entry.entry_id):
-            for x in regentry.identifiers:
-                if x[0] == LENNOX_DOMAIN:
-                    unique_id = x[1]
-                    if unique_id.startswith("123_"):
-                        suffix = unique_id.removeprefix("123_")
-                        new_unique_id = f"{system.unique_id}_{suffix}"
-                        device_update_list[regentry.id] = new_unique_id
-                        _LOGGER.info(
-                            "Updating device [%s] identifier [%s] new unique id [%s]",
-                            regentry.id,
-                            unique_id,
-                            new_unique_id,
-                        )
-                    elif unique_id == "123":
-                        new_unique_id = system.unique_id
-                        device_update_list[regentry.id] = new_unique_id
-                        _LOGGER.info(
-                            "Updating device [%s] identifier [%s] new unique id [%s]",
-                            regentry.id,
-                            unique_id,
-                            new_unique_id,
-                        )
+        for regentry in dev_reg.devices.values():
+            if self.config_entry.entry_id in regentry.config_entries:
+                for x in regentry.identifiers:
+                    if x[0] == LENNOX_DOMAIN:
+                        unique_id = x[1]
+                        if unique_id.startswith("123_"):
+                            suffix = unique_id.removeprefix("123_")
+                            new_unique_id = f"{system.unique_id}_{suffix}"
+                            device_update_list[regentry.id] = new_unique_id
+                            _LOGGER.info(
+                                "Updating device [%s] identifier [%s] new unique id [%s]",
+                                regentry.id,
+                                unique_id,
+                                new_unique_id,
+                            )
+                        elif unique_id == "123":
+                            new_unique_id = system.unique_id
+                            device_update_list[regentry.id] = new_unique_id
+                            _LOGGER.info(
+                                "Updating device [%s] identifier [%s] new unique id [%s]",
+                                regentry.id,
+                                unique_id,
+                                new_unique_id,
+                            )
         for k, v in device_update_list.items():
             _LOGGER.info("Committing new device unique ids for connection [%s] [%s] [%s]", self.api.ip, k, v)
             dev_reg.async_update_device(k, new_identifiers={(LENNOX_DOMAIN, v)})
@@ -797,9 +769,8 @@ class Manager:
                 elif e.error_code == EC_CONFIG_TIMEOUT:
                     _LOGGER.warning("async_setup: host [%s] %s", self._ip_address, e.as_string())
                     _LOGGER.info(
-                        "connection host [%s] will be retried in %d minutes",
+                        "connection host [%s] will be retried in 1 minute",
                         self._ip_address,
-                        RETRY_INTERVAL_MINUTES,
                     )
                 else:
                     _LOGGER.error(
@@ -808,9 +779,8 @@ class Manager:
                         e.as_string(),
                     )
                     _LOGGER.info(
-                        "async setup host [%s] will be retried in %d minutes",
+                        "async setup host [%s] will be retried in 1 minute",
                         self._ip_address,
-                        RETRY_INTERVAL_MINUTES,
                     )
 
     async def configuration_initialization(self) -> None:
@@ -891,8 +861,7 @@ class Manager:
             except S30Exception as e:
                 _LOGGER.error("reinitialize_task host [%s] %s", self._ip_address, e.as_string())
                 if e.error_code == EC_LOGIN:
-                    # This runs as a background task, so an exception raised here is never observed.
-                    # Mark the connection failed so entities go unavailable, then stop retrying.
+                    # Raising here is lost in a background task; mark the connection failed and stop
                     self.updateState(DS_LOGIN_FAILED)
                     _LOGGER.error(
                         "reinitialize_task host [%s] unable to login - please check credentials and restart Home Assistant",
@@ -1017,7 +986,7 @@ class Manager:
             return
         elif self.get_reinitialize():
             self.updateState(DS_DISCONNECTED)
-            self.create_background_task(self.reinitialize_task())
+            self.config_entry.async_create_background_task(self._hass, self.reinitialize_task(), "lennoxs30 reconnect")
             _LOGGER.debug(
                 "messagePump_task host [%s] is exiting - to enter retries",
                 self._ip_address,

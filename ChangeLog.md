@@ -22,6 +22,20 @@
   2026.11.0, as upstream does.
 - tests: the suite runs on pytest-homeassistant 2026.11.0, as
   upstream's does.
+- The fork's code is now upstream's plus the five fixes offered to
+  it as pull requests (branches fix/cloud-equipment-0,
+  fix/climate-turn-off, fix/safety-switch-rearm,
+  fix/config-entry-lifecycle, fix/inactive-zone-setpoints), so what
+  runs here is what was sent.
+- manager: a failed or dropped connection is retried every minute
+  again, as upstream does, instead of every 20 minutes.
+- climate: hvac_action reports humidifier states as upstream does;
+  the fork's mapping of unknown states to idle was dropped.
+- config_flow: host validation is upstream's again, so bracketed IPv6
+  addresses are rejected as before.
+- number, switch: the timed ventilation number and the ventilation
+  switch no longer guard against a missing remaining time, as
+  upstream.
 
 ## [2026-10-28]
 

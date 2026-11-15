@@ -13,7 +13,6 @@ from unittest.mock import patch
 import pytest
 from homeassistant.helpers import device_registry as dr
 from lennoxs30api.s30api_async import LENNOX_NONE_STR, lennox_zone
-from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.lennoxs30 import (
     DOMAIN,
@@ -492,36 +491,3 @@ async def test_S30VentilationUnit_device_model(hass, manager_2_systems: Manager)
     system.ventilationUnitType = "1_stage_hrv"
     vent = S30VentilationUnit(hass, manager.config_entry, system, s30)
     assert vent.device_model == "1_stage_hrv"
-
-
-@pytest.mark.asyncio()
-async def test_create_devices_links_children_by_registry_id(hass, manager: Manager):
-    """Against the real registry, every child device must carry the controller's registry id as via_device_id."""
-    # The registry only creates devices for a config entry hass knows about.
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        entry_id=manager.config_entry.entry_id,
-        unique_id=manager.config_entry.unique_id,
-        data=dict(manager.config_entry.data),
-    )
-    entry.add_to_hass(hass)
-    device_registry = dr.async_get(hass)
-    # conftest stubs async_get_or_create for every test; this one needs the real registry.
-    real_async_get_or_create = dr.DeviceRegistry.async_get_or_create.__get__(device_registry)
-    with patch.object(device_registry, "async_get_or_create", real_async_get_or_create):
-        await manager.create_devices()
-    system = manager.api.system_list[0]
-
-    def registered(unique_name: str) -> dr.DeviceEntry:
-        found = device_registry.async_get_devices(identifiers={(DOMAIN, unique_name)}, config_entry_id=manager.config_entry.entry_id)
-        assert len(found) == 1, unique_name
-        return found[0]
-
-    controller = registered(system.unique_id)
-    assert manager.system_equip_device_map[system.sysId][0].device_id == controller.id
-    assert controller.via_device_id is None
-    for suffix in ("_ou", "_iu"):
-        assert registered(system.unique_id + suffix).via_device_id == controller.id
-    for zone in system.zone_list:
-        if zone.is_zone_active():
-            assert registered(zone.unique_id).via_device_id == controller.id

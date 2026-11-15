@@ -10,17 +10,15 @@
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
 
+import asyncio
 import logging
-import threading
 from unittest.mock import patch
 
 import pytest
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import CONF_TIMEOUT, EVENT_HOMEASSISTANT_STOP
+from homeassistant.const import CONF_TIMEOUT
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.setup import async_setup_component
 from lennoxs30api.s30exception import EC_COMMS_ERROR, EC_CONFIG_TIMEOUT, EC_LOGIN, S30Exception
 from pytest_homeassistant.common import MockConfigEntry
 
@@ -38,64 +36,7 @@ from custom_components.lennoxs30.const import (
     LENNOX_DOMAIN,
     MANAGER,
 )
-
-
-def _completed_task_factory(hass: HomeAssistant):
-    """Stand-in for asyncio.create_task that records the coroutine but returns a finished future.
-
-    The manager keeps every task it starts and awaits them on shutdown, which the hass fixture
-    triggers at teardown. A bare MagicMock there is not awaitable and leaks the coroutine.
-    """
-
-    def _create_task(coro, **_kwargs):
-        coro.close()
-        future = hass.loop.create_future()
-        future.set_result(None)
-        return future
-
-    return _create_task
-
-
-@pytest.mark.asyncio()
-async def test_async_setup_entry_builds_manager_off_the_event_loop(hass: HomeAssistant):
-    """Creating the API opens the message log file, so the manager must be built in the executor (issue #412)."""
-    data = {
-        "cloud_connection": False,
-        "host": "192.168.1.93",
-        "app_id": "homeassistant",
-        "create_sensors": True,
-        "allergen_defender_switch": False,
-        "create_inverter_power": False,
-        "create_diagnostic_sensors": False,
-        "create_parameters": False,
-        "protocol": "https",
-        "scan_interval": 1,
-        "fast_scan_interval": 0.75,
-        "init_wait_time": 30,
-        "pii_in_message_logs": False,
-        "message_debug_logging": True,
-        "log_messages_to_file": True,
-        "message_debug_file": "messages.log",
-        CONF_FAST_POLL_COUNT: 5,
-        CONF_TIMEOUT: 30,
-    }
-    hass.data[LENNOX_DOMAIN] = {}
-    config_entry = MockConfigEntry(domain=DOMAIN, version=5, minor_version=0, title="Test", data=data, unique_id="12345")
-
-    construction_threads: list[threading.Thread] = []
-    original_init = Manager.__init__
-
-    def recording_init(self, *args, **kwargs):
-        construction_threads.append(threading.current_thread())
-        original_init(self, *args, **kwargs)
-
-    with patch.object(Manager, "__init__", recording_init), patch("custom_components.lennoxs30.Manager.s30_initialize"):
-        assert await async_setup_entry(hass, config_entry) is True
-
-    assert len(construction_threads) == 1
-    assert construction_threads[0] is not threading.main_thread()
-    manager: Manager = hass.data[LENNOX_DOMAIN][config_entry.unique_id][MANAGER]
-    assert manager._message_logging_file == "messages.log"
+from tests.conftest import conftest_close_background_task
 
 
 @pytest.mark.asyncio()
@@ -180,7 +121,7 @@ async def test_async_setup_entry_local(hass: HomeAssistant, caplog):
         caplog.clear()
         with patch("custom_components.lennoxs30.Manager.s30_initialize") as s30_initialize:
             with patch("custom_components.lennoxs30.Manager.updateState") as update_state:
-                with patch("asyncio.create_task", side_effect=_completed_task_factory(hass)) as create_task:
+                with patch.object(config_entry, "async_create_background_task", side_effect=conftest_close_background_task) as create_task:
                     s30_initialize.side_effect = S30Exception("Timeout waiting for config", EC_CONFIG_TIMEOUT, 0)
                     ex: HomeAssistantError = None
                     res = await async_setup_entry(hass, config_entry)
@@ -189,7 +130,7 @@ async def test_async_setup_entry_local(hass: HomeAssistant, caplog):
                     assert res is True
 
                     assert create_task.call_count == 1
-                    assert create_task.call_args[0][0].__name__ == "initialize_retry_task"
+                    assert create_task.call_args[0][1].__name__ == "initialize_retry_task"
 
                     assert len(caplog.messages) >= 2
 
@@ -205,7 +146,7 @@ async def test_async_setup_entry_local(hass: HomeAssistant, caplog):
         caplog.clear()
         with patch("custom_components.lennoxs30.Manager.s30_initialize") as s30_initialize:
             with patch("custom_components.lennoxs30.Manager.updateState") as update_state:
-                with patch("asyncio.create_task", side_effect=_completed_task_factory(hass)) as create_task:
+                with patch.object(config_entry, "async_create_background_task", side_effect=conftest_close_background_task) as create_task:
                     s30_initialize.side_effect = S30Exception("Transport Error", EC_COMMS_ERROR, 0)
                     ex: HomeAssistantError = None
                     res = await async_setup_entry(hass, config_entry)
@@ -214,7 +155,7 @@ async def test_async_setup_entry_local(hass: HomeAssistant, caplog):
                     assert res is True
 
                     assert create_task.call_count == 1
-                    assert create_task.call_args[0][0].__name__ == "initialize_retry_task"
+                    assert create_task.call_args[0][1].__name__ == "initialize_retry_task"
 
                     assert len(caplog.messages) >= 2
 
@@ -521,7 +462,6 @@ async def test_async_unload_entry_success(hass, caplog):
         res = await async_setup_entry(hass, config_entry)
         assert res is True
         manager: Manager = hass.data[LENNOX_DOMAIN][config_entry.unique_id][MANAGER]
-        manager._climate_entities_initialized = True
         with patch.object(hass.config_entries, "async_unload_platforms") as mock_unload_platforms:
             with patch.object(manager, "async_shutdown") as mockasync_shutdown:
                 mock_unload_platforms.return_value = True
@@ -581,7 +521,6 @@ async def test_async_unload_entry_unload_fail(hass, caplog):
             res = await async_setup_entry(hass, config_entry)
             assert res is True
             manager: Manager = hass.data[LENNOX_DOMAIN][config_entry.unique_id][MANAGER]
-            manager._climate_entities_initialized = True
             with patch.object(hass.config_entries, "async_unload_platforms") as mock_unload_platforms:
                 mock_unload_platforms.return_value = False
                 with patch.object(manager, "async_shutdown") as mockasync_shutdown:
@@ -626,7 +565,6 @@ async def test_async_unload_entry_unload_fail(hass, caplog):
             res = await async_setup_entry(hass, config_entry)
             assert res is True
             manager: Manager = hass.data[LENNOX_DOMAIN][config_entry.unique_id][MANAGER]
-            manager._climate_entities_initialized = True
             with patch.object(hass.config_entries, "async_unload_platforms") as mock_unload_platforms:
                 mock_unload_platforms.return_value = True
                 with patch.object(manager, "async_shutdown") as mockasync_shutdown:
@@ -650,8 +588,8 @@ async def test_async_unload_entry_unload_fail(hass, caplog):
 
 
 @pytest.mark.asyncio()
-async def test_async_unload_entry_while_retrying(hass: HomeAssistant):
-    """Unloading an entry that never connected cancels the retry loop and the stop listener."""
+async def test_async_unload_entry_stops_retrying(hass: HomeAssistant):
+    """Unloading an entry that never connected must stop its connection retries."""
     data = {
         "cloud_connection": False,
         "host": "192.168.1.93",
@@ -672,33 +610,17 @@ async def test_async_unload_entry_while_retrying(hass: HomeAssistant):
         CONF_FAST_POLL_COUNT: 5,
         CONF_TIMEOUT: 30,
     }
-    config_entry = MockConfigEntry(domain=DOMAIN, title="192.168.1.93", data=data, unique_id="12345", version=5)
+    config_entry = MockConfigEntry(domain=DOMAIN, version=5, title="192.168.1.93", data=data, unique_id="12345")
     config_entry.add_to_hass(hass)
 
-    # Another integration has already loaded the sensor component, so HA would
-    # try (and fail) to unload lennoxs30 sensors that were never set up.
-    assert await async_setup_component(hass, "sensor", {})
-    stop_listeners = hass.bus.async_listeners().get(EVENT_HOMEASSISTANT_STOP, 0)
+    with patch("custom_components.lennoxs30.RETRY_INTERVAL_SECONDS", 0.05):
+        with patch("custom_components.lennoxs30.Manager.s30_initialize") as s30_initialize:
+            s30_initialize.side_effect = S30Exception("Timeout waiting for config", EC_CONFIG_TIMEOUT, 0)
+            assert await hass.config_entries.async_setup(config_entry.entry_id) is True
+            await asyncio.sleep(0.15)
+            assert s30_initialize.call_count > 1
 
-    with patch(
-        "custom_components.lennoxs30.Manager.s30_initialize",
-        side_effect=S30Exception("timeout", EC_CONFIG_TIMEOUT, 1),
-    ):
-        assert await hass.config_entries.async_setup(config_entry.entry_id) is True
-        await hass.async_block_till_done(wait_background_tasks=False)
-
-    assert config_entry.state is ConfigEntryState.LOADED
-    manager: Manager = hass.data[LENNOX_DOMAIN][config_entry.unique_id][MANAGER]
-    assert manager.platforms_loaded is False
-    retry_tasks = set(manager._background_tasks)
-    assert len(retry_tasks) == 1
-    assert hass.bus.async_listeners()[EVENT_HOMEASSISTANT_STOP] == stop_listeners + 1
-
-    with patch.object(manager.api, "shutdown") as mock_api_shutdown:
-        assert await hass.config_entries.async_unload(config_entry.entry_id) is True
-        assert mock_api_shutdown.call_count == 1
-
-    assert config_entry.state is ConfigEntryState.NOT_LOADED
-    assert all(task.cancelled() for task in retry_tasks)
-    assert len(manager._background_tasks) == 0
-    assert hass.bus.async_listeners().get(EVENT_HOMEASSISTANT_STOP, 0) == stop_listeners
+            assert await hass.config_entries.async_unload(config_entry.entry_id) is True
+            calls_at_unload = s30_initialize.call_count
+            await asyncio.sleep(0.15)
+            assert s30_initialize.call_count == calls_at_unload
