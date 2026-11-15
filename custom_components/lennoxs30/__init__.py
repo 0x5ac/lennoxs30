@@ -382,11 +382,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         elif err.error_code == EC_CONFIG_TIMEOUT:
             _LOGGER.warning("async_setup: %s", err.message)
             _LOGGER.info("connection will be retried in 1 minute")
-            asyncio.create_task(manager.initialize_retry_task())
+            # Entry background tasks are cancelled when the entry is unloaded
+            entry.async_create_background_task(hass, manager.initialize_retry_task(), "lennoxs30 retry")
         else:
             _LOGGER.error("async_setup unexpected error %s", err.message)
             _LOGGER.info("connection will be retried in 1 minute")
-            asyncio.create_task(manager.initialize_retry_task())
+            entry.async_create_background_task(hass, manager.initialize_retry_task(), "lennoxs30 retry")
     _LOGGER.debug("async_setup complete host [%s]", host_name)
     return True
 
@@ -980,7 +981,7 @@ class Manager:
             return
         elif self.get_reinitialize():
             self.updateState(DS_DISCONNECTED)
-            asyncio.create_task(self.reinitialize_task())
+            self.config_entry.async_create_background_task(self._hass, self.reinitialize_task(), "lennoxs30 reconnect")
             _LOGGER.debug(
                 "messagePump_task host [%s] is exiting - to enter retries",
                 self._ip_address,

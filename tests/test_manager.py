@@ -37,7 +37,7 @@ from custom_components.lennoxs30 import (
     RETRY_INTERVAL_SECONDS,
     Manager,
 )
-from tests.conftest import conftest_close_coroutine
+from tests.conftest import conftest_close_background_task, conftest_close_coroutine
 
 
 @pytest.mark.asyncio()
@@ -508,7 +508,9 @@ async def test_manager_messagePump_task(manager_us_customary_units: Manager, cap
                         with patch.object(manager, "get_reinitialize") as get_reinitialize:
                             get_reinitialize.side_effect = [False, True, True]
                             with patch.object(manager, "reinitialize_task") as reinitialize_task:
-                                with patch("asyncio.create_task", side_effect=conftest_close_coroutine) as create_task:
+                                with patch.object(
+                                    manager.config_entry, "async_create_background_task", side_effect=conftest_close_background_task
+                                ) as create_task:
                                     with patch.object(manager, "updateState") as update_state:
                                         await manager.messagePump_task()
                                         assert sleep.call_count == 1
@@ -544,7 +546,9 @@ async def test_manager_messagePump_task(manager_us_customary_units: Manager, cap
                         with patch.object(manager, "get_reinitialize") as get_reinitialize:
                             get_reinitialize.side_effect = [False, True, True]
                             with patch.object(manager, "reinitialize_task") as reinitialize_task:
-                                with patch("asyncio.create_task", side_effect=conftest_close_coroutine) as create_task:
+                                with patch.object(
+                                    manager.config_entry, "async_create_background_task", side_effect=conftest_close_background_task
+                                ) as create_task:
                                     with patch.object(manager, "updateState") as update_state:
                                         await manager.messagePump_task()
                                         assert sleep.call_count == 1
@@ -581,7 +585,9 @@ async def test_manager_messagePump_task(manager_us_customary_units: Manager, cap
                         with patch.object(manager, "get_reinitialize") as get_reinitialize:
                             get_reinitialize.side_effect = [False, True, True]
                             with patch.object(manager, "reinitialize_task") as reinitialize_task:
-                                with patch("asyncio.create_task", side_effect=conftest_close_coroutine) as create_task:
+                                with patch.object(
+                                    manager.config_entry, "async_create_background_task", side_effect=conftest_close_background_task
+                                ) as create_task:
                                     with patch.object(manager, "updateState") as update_state:
                                         await manager.messagePump_task()
                                         assert sleep.call_count == 1
@@ -617,7 +623,9 @@ async def test_manager_messagePump_task(manager_us_customary_units: Manager, cap
                         with patch.object(manager, "get_reinitialize") as get_reinitialize:
                             get_reinitialize.side_effect = [False, False, True, True]
                             with patch.object(manager, "reinitialize_task") as reinitialize_task:
-                                with patch("asyncio.create_task", side_effect=conftest_close_coroutine) as create_task:
+                                with patch.object(
+                                    manager.config_entry, "async_create_background_task", side_effect=conftest_close_background_task
+                                ) as create_task:
                                     with patch.object(manager, "updateState") as update_state:
                                         await manager.messagePump_task()
                                         assert sleep.call_count == 2
@@ -656,7 +664,9 @@ async def test_manager_messagePump_task(manager_us_customary_units: Manager, cap
                         with patch.object(manager, "get_reinitialize") as get_reinitialize:
                             get_reinitialize.side_effect = [False, True, True]
                             with patch.object(manager, "reinitialize_task") as reinitialize_task:
-                                with patch("asyncio.create_task", side_effect=conftest_close_coroutine) as create_task:
+                                with patch.object(
+                                    manager.config_entry, "async_create_background_task", side_effect=conftest_close_background_task
+                                ) as create_task:
                                     with patch.object(manager, "updateState") as update_state:
                                         await manager.messagePump_task()
                                         assert sleep.call_count == 1
@@ -697,7 +707,9 @@ async def test_manager_messagePump_task(manager_us_customary_units: Manager, cap
                         with patch.object(manager, "get_reinitialize") as get_reinitialize:
                             get_reinitialize.side_effect = [False, True, True]
                             with patch.object(manager, "reinitialize_task") as reinitialize_task:
-                                with patch("asyncio.create_task", side_effect=conftest_close_coroutine) as create_task:
+                                with patch.object(
+                                    manager.config_entry, "async_create_background_task", side_effect=conftest_close_background_task
+                                ) as create_task:
                                     with patch.object(manager, "updateState") as update_state:
                                         await manager.messagePump_task()
                                         assert sleep.call_count == 1
@@ -734,7 +746,9 @@ async def test_manager_messagePump_task(manager_us_customary_units: Manager, cap
                         with patch.object(manager, "get_reinitialize") as get_reinitialize:
                             get_reinitialize.side_effect = [False, False, False, False, False, False, True, True]
                             with patch.object(manager, "reinitialize_task") as reinitialize_task:
-                                with patch("asyncio.create_task", side_effect=conftest_close_coroutine) as create_task:
+                                with patch.object(
+                                    manager.config_entry, "async_create_background_task", side_effect=conftest_close_background_task
+                                ) as create_task:
                                     with patch.object(manager, "updateState") as update_state:
                                         await manager.messagePump_task()
                                         assert sleep.call_count == 5
@@ -775,7 +789,9 @@ async def test_manager_messagePump_task(manager_us_customary_units: Manager, cap
                         with patch.object(manager, "get_reinitialize") as get_reinitialize:
                             get_reinitialize.side_effect = [False, True, False]
                             with patch.object(manager, "reinitialize_task") as reinitialize_task:
-                                with patch("asyncio.create_task", side_effect=conftest_close_coroutine) as create_task:
+                                with patch.object(
+                                    manager.config_entry, "async_create_background_task", side_effect=conftest_close_background_task
+                                ) as create_task:
                                     with patch.object(manager, "updateState") as update_state:
                                         await manager.messagePump_task()
                                         assert sleep.call_count == 1

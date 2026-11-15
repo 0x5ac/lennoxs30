@@ -10,6 +10,7 @@
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
 
+import asyncio
 import logging
 from unittest.mock import patch
 
@@ -19,6 +20,7 @@ from homeassistant.const import CONF_TIMEOUT
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from lennoxs30api.s30exception import EC_COMMS_ERROR, EC_CONFIG_TIMEOUT, EC_LOGIN, S30Exception
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.lennoxs30 import (
     DOMAIN,
@@ -34,7 +36,7 @@ from custom_components.lennoxs30.const import (
     LENNOX_DOMAIN,
     MANAGER,
 )
-from tests.conftest import conftest_close_coroutine
+from tests.conftest import conftest_close_background_task
 
 
 @pytest.mark.asyncio()
@@ -119,7 +121,7 @@ async def test_async_setup_entry_local(hass: HomeAssistant, caplog):
         caplog.clear()
         with patch("custom_components.lennoxs30.Manager.s30_initialize") as s30_initialize:
             with patch("custom_components.lennoxs30.Manager.updateState") as update_state:
-                with patch("asyncio.create_task", side_effect=conftest_close_coroutine) as create_task:
+                with patch.object(config_entry, "async_create_background_task", side_effect=conftest_close_background_task) as create_task:
                     s30_initialize.side_effect = S30Exception("Timeout waiting for config", EC_CONFIG_TIMEOUT, 0)
                     ex: HomeAssistantError = None
                     res = await async_setup_entry(hass, config_entry)
@@ -128,7 +130,7 @@ async def test_async_setup_entry_local(hass: HomeAssistant, caplog):
                     assert res is True
 
                     assert create_task.call_count == 1
-                    assert create_task.call_args[0][0].__name__ == "initialize_retry_task"
+                    assert create_task.call_args[0][1].__name__ == "initialize_retry_task"
 
                     assert len(caplog.messages) >= 2
 
@@ -144,7 +146,7 @@ async def test_async_setup_entry_local(hass: HomeAssistant, caplog):
         caplog.clear()
         with patch("custom_components.lennoxs30.Manager.s30_initialize") as s30_initialize:
             with patch("custom_components.lennoxs30.Manager.updateState") as update_state:
-                with patch("asyncio.create_task", side_effect=conftest_close_coroutine) as create_task:
+                with patch.object(config_entry, "async_create_background_task", side_effect=conftest_close_background_task) as create_task:
                     s30_initialize.side_effect = S30Exception("Transport Error", EC_COMMS_ERROR, 0)
                     ex: HomeAssistantError = None
                     res = await async_setup_entry(hass, config_entry)
@@ -153,7 +155,7 @@ async def test_async_setup_entry_local(hass: HomeAssistant, caplog):
                     assert res is True
 
                     assert create_task.call_count == 1
-                    assert create_task.call_args[0][0].__name__ == "initialize_retry_task"
+                    assert create_task.call_args[0][1].__name__ == "initialize_retry_task"
 
                     assert len(caplog.messages) >= 2
 
@@ -583,3 +585,42 @@ async def test_async_unload_entry_unload_fail(hass, caplog):
                     assert "async_unload_entry" in msg
                     assert "unexpected exception" in msg
                     assert str(config_entry.unique_id) in msg
+
+
+@pytest.mark.asyncio()
+async def test_async_unload_entry_stops_retrying(hass: HomeAssistant):
+    """Unloading an entry that never connected must stop its connection retries."""
+    data = {
+        "cloud_connection": False,
+        "host": "192.168.1.93",
+        "app_id": "homeassistant",
+        "create_sensors": True,
+        "allergen_defender_switch": False,
+        "create_inverter_power": False,
+        "create_diagnostic_sensors": False,
+        "create_parameters": False,
+        "protocol": "https",
+        "scan_interval": 1,
+        "fast_scan_interval": 0.75,
+        "init_wait_time": 30,
+        "pii_in_message_logs": False,
+        "message_debug_logging": True,
+        "log_messages_to_file": False,
+        "message_debug_file": "",
+        CONF_FAST_POLL_COUNT: 5,
+        CONF_TIMEOUT: 30,
+    }
+    config_entry = MockConfigEntry(domain=DOMAIN, version=5, title="192.168.1.93", data=data, unique_id="12345")
+    config_entry.add_to_hass(hass)
+
+    with patch("custom_components.lennoxs30.RETRY_INTERVAL_SECONDS", 0.05):
+        with patch("custom_components.lennoxs30.Manager.s30_initialize") as s30_initialize:
+            s30_initialize.side_effect = S30Exception("Timeout waiting for config", EC_CONFIG_TIMEOUT, 0)
+            assert await hass.config_entries.async_setup(config_entry.entry_id) is True
+            await asyncio.sleep(0.15)
+            assert s30_initialize.call_count > 1
+
+            assert await hass.config_entries.async_unload(config_entry.entry_id) is True
+            calls_at_unload = s30_initialize.call_count
+            await asyncio.sleep(0.15)
+            assert s30_initialize.call_count == calls_at_unload
