@@ -90,7 +90,7 @@ async def test_helpers_helper_get_equipment_device_info_no_device(manager: Manag
 
 @pytest.mark.asyncio()
 async def test_helpers_helper_get_equipment_device_info_controller_without_equipment(manager: Manager, caplog):
-    """Cloud connections send no equipment list; equipment 0 must still resolve to the controller silently."""
+    """With no equipment list (issue #432), equipment 0 must still resolve to the controller without a warning."""
     system = manager.api.system_list[0]
     system.equipment = {}
     system.ventilationUnitType = None

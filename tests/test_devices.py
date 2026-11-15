@@ -407,8 +407,7 @@ async def test_create_device_no_equipment(hass, manager_system_04_furn_ac_zoning
     with patch.object(device_registry, "async_get_or_create") as mock_create_device:
         await manager.create_devices()
 
-        # The controller is always mapped as equipment 0 even when no equipment list was received,
-        # which is the normal case on cloud connections.
+        # The controller is always mapped as equipment 0, even when no equipment list was received (issue #432).
         assert len(manager.system_equip_device_map[manager.api.system_list[0].sysId]) == 1
         controller = manager.system_equip_device_map[manager.api.system_list[0].sysId][0]
         assert isinstance(controller, S30ControllerDevice)
