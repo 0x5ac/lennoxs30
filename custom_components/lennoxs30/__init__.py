@@ -860,9 +860,13 @@ class Manager:
             except S30Exception as e:
                 _LOGGER.error("reinitialize_task host [%s] %s", self._ip_address, e.as_string())
                 if e.error_code == EC_LOGIN:
-                    raise HomeAssistantError(
-                        f"Lennox30 unable to login host [{self._ip_address}]  - please check credentials and restart Home Assistant"
-                    ) from e
+                    # Raising here is lost in a background task; mark the connection failed and stop
+                    self.updateState(DS_LOGIN_FAILED)
+                    _LOGGER.error(
+                        "reinitialize_task host [%s] unable to login - please check credentials and restart Home Assistant",
+                        self._ip_address,
+                    )
+                    return
             self.updateState(DS_RETRY_WAIT)
             await asyncio.sleep(RETRY_INTERVAL_SECONDS)
 

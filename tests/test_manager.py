@@ -14,7 +14,6 @@ from unittest.mock import patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util.unit_system import METRIC_SYSTEM, US_CUSTOMARY_SYSTEM
 from lennoxs30api.s30api_async import (
     lennox_system,
@@ -479,19 +478,26 @@ async def test_manager_reinitialize_task(manager_us_customary_units: Manager, ca
             with patch.object(manager, "connect_subscribe") as connect_subscribe:
                 connect_subscribe.side_effect = S30Exception("Bad Login", EC_LOGIN, 0)
                 with patch("asyncio.create_task", side_effect=conftest_close_coroutine) as create_task:
-                    ex: HomeAssistantError = None
-                    try:
+                    with patch("asyncio.sleep") as sleep:
                         await manager.reinitialize_task()
-                    except HomeAssistantError as hae:
-                        ex = hae
-                    assert ex is not None
-                    assert "unable to login" in str(ex)
-                    assert manager._ip_address in str(ex)
 
                     assert connect_subscribe.call_count == 1
                     assert len(connect_subscribe.mock_calls[0].args) == 0
-                    assert update_state.call_count == 1
+                    # A login failure marks the connection failed and stops retrying
+                    assert update_state.call_count == 2
                     assert update_state.mock_calls[0].args[0] == DS_CONNECTING
+                    assert update_state.mock_calls[1].args[0] == DS_LOGIN_FAILED
+                    assert sleep.call_count == 0
+                    assert create_task.call_count == 0
+                    assert "unable to login" in caplog.records[-1].message
+                    assert manager._ip_address in caplog.records[-1].message
+
+    # Without updateState patched, the failure must make the entities unavailable
+    manager.connected = True
+    with patch.object(manager, "connect_subscribe", side_effect=S30Exception("Bad Login", EC_LOGIN, 0)):
+        await manager.reinitialize_task()
+    assert manager.connected is False
+    assert manager._hass.states.get(manager.connection_state).state == DS_LOGIN_FAILED
 
 
 @pytest.mark.asyncio()
